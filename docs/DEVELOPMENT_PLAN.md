@@ -12,9 +12,10 @@ implementation, cloned at `../claude-usage-1.5.5`).
 - Run from a terminal: `python cli.py dashboard` and you're done.
 
 This document is the single source of truth for AI agents building the tool. Every schema fact
-below was **verified against real rollout files on this machine** (61 files, Codex CLI versions
-0.98.0 → 0.144.2, Feb–Jul 2026). Where a fact is an assumption rather than verified, it is marked
-**[VERIFY]** and has a corresponding validation task in Phase 0.
+below was **verified against real rollout files on this machine** (63 files, Codex CLI versions
+0.98.0 → 0.144.2, Feb–Jul 2026). Phase 0 ran a read-only census probe over all 63 files and
+resolved the open questions; results are recorded in §2.4. Remaining **[VERIFY]** tags are
+pricing-only and belong to Phase 2 (they need live openai.com pricing, not local data).
 
 ---
 
@@ -141,6 +142,39 @@ guarantee worth a README sentence.
    never load whole file into memory as one string.
 6. Future Codex versions will drift further — unknown record types and unknown payload fields
    must be silently skipped, never crash the scan.
+
+### 2.4 Phase 0 census (verified against all 63 local files)
+
+Read-only probe results — the empirical basis for the parser's skip-list and invariants.
+
+**Top-level record types seen:** `session_meta`, `turn_context`, `event_msg`, `response_item`,
+plus (0.144.2 only) `world_state`, `compacted`. Only `session_meta`, `turn_context`, and
+`event_msg`/`token_count` are consumed; **everything else is skipped silently.**
+
+**`event_msg` payload types seen** (only `token_count` is consumed; the rest are the explicit
+skip-list): `task_started`, `task_complete`, `turn_aborted`, `user_message`, `agent_message`,
+`agent_reasoning`, `token_count`, `exec_command_end`, `patch_apply_end`, `web_search_end`,
+`mcp_tool_call_end`, `thread_name_updated`, `thread_settings_applied`, `context_compacted`.
+
+- **`thread_name_updated`** is an in-file session-title event (analogous to claude-usage's
+  `custom-title`). It is an *optional* second source of `topic` alongside `session_index.jsonl`;
+  `session_index.jsonl` remains the primary source. Low priority — wire it only if convenient.
+- **`context_compacted` / `compacted`** = context-window compaction. Present in 3 files.
+  Critically, `total_token_usage` **did not reset** in any of them (see §10) — compaction is
+  informational for us, not an accounting hazard.
+
+**`source` python type:** `str` ×82, `dict` ×24 (counts exceed 63 because resumes re-emit
+`session_meta`). Both must be handled.
+
+**`token_count.info`:** `null` ×11, present ×2747. Guard every access.
+
+**`rate_limits` keys observed:** `primary`, `secondary`, `credits`, `plan_type`, `limit_id`,
+`limit_name`, `rate_limit_reached_type`, `individual_limit` (the last four absent in older
+files). **`rate_limits.primary` keys:** `used_percent`, `window_minutes`, `resets_at` (stable
+across all versions). **`plan_type`:** `null` ×174 or `'plus'` ×2584.
+
+**Session/file relationship:** append-only, resumes re-emit same-id `session_meta`, totals
+monotonic — full detail in §4.3.
 
 ---
 
@@ -271,8 +305,10 @@ for each line:                       # stream, never slurp
     anything else → skip silently
 ```
 
-Fallback: if a rollout file has token_count events but **no** turn_context (possible in old
-versions **[VERIFY in Phase 0]**), model stays `NULL` → displayed as `unknown`, costed as n/a.
+Fallback: if a rollout file has token_count events but **no** turn_context, model stays `NULL`
+→ displayed as `unknown`, costed as n/a. **Phase 0 census: 0 of 63 files hit this** — every
+file with token_count also has turn_context, across all 9 cli_versions. Keep the fallback as
+pure defensive coding, not an expected path.
 
 ### 4.3 Incremental scanning
 
@@ -289,9 +325,20 @@ Copy claude-usage's mechanism unchanged — it is battle-tested:
   claude-usage design needs genuine adaptation — claude-usage's records are self-contained,
   ours are stateful. Design it deliberately and test it explicitly.
 - If mtime changed but file didn't grow: update mtime, skip.
-- Rollout files are append-only **[VERIFY in Phase 0: confirm resumed sessions append to the
-  same file rather than rewriting it]**. If rewrites are observed, fall back to full reparse
-  when `lines` shrank (delete that session's turns first, then reinsert).
+- **Append-only CONFIRMED (Phase 0).** Resumed sessions append to the same file; they re-emit a
+  fresh `session_meta` line (14 of 63 files carry 2–10 `session_meta` records) but the
+  `payload.id` **never changes within a file** (0 mismatches observed), and `total_token_usage`
+  is monotonic — it **never decreased** in any file, even the 3 files containing compaction
+  records. Consequences the parser must honor:
+  - **Multiple `session_meta` per file is normal** — do not treat a 2nd session_meta as a new
+    session; key everything on `payload.id` and merge.
+  - Each resume segment re-emits `turn_context` before its token_counts, so model carry-forward
+    re-establishes naturally at resume boundaries — the incremental "new lines only" pass will
+    see a fresh turn_context whenever a resume happened. The persisted carry-forward state
+    (below) is still needed for the case where new lines begin *mid-segment* (a turn_context in
+    a previously-read region, token_counts in the new region).
+  - Defensive `lines`-shrank fallback (full reparse: delete session's turns, reinsert) is
+    retained but is not an expected path given append-only behavior.
 
 ### 4.4 Reconciliation (correctness backstop)
 
@@ -429,19 +476,18 @@ GitHub.
 Each phase is sized for one focused agent session, ends in a working state, and has explicit
 acceptance criteria. Later phases must not begin until the prior phase's criteria pass.
 
-### Phase 0 — Fixtures & format validation (foundation)
+### Phase 0 — Fixtures & format validation (foundation) — ✅ DONE
 
-1. Write a throwaway probe script (scratch, not committed) that walks the real `~/.codex/sessions`
-   **read-only** and reports: record-type census per cli_version; whether any file with
-   token_counts lacks turn_context; whether resumed sessions append or rewrite (compare a
-   file's line count before/after resuming a session — or infer from `processed_files`-style
-   sampling); rate_limits field census. Resolve every **[VERIFY]** tag in this document and
-   update it in place.
-2. Build the synthetic fixture set (§8) informed by the census.
-3. Deliverable: updated plan + `tests/fixtures/*` + `tests/test_fixtures_sanity.py`.
+1. ✅ Read-only probe walked all 63 local rollout files. Census recorded in §2.4; the four open
+   questions resolved: (a) 0 files have token_count without turn_context; (b) files are
+   append-only, resumes re-emit same-id session_meta (§4.3); (c) `total_token_usage` never
+   resets, even under compaction (§10); (d) full rate_limits/plan_type field census captured.
+   All non-pricing **[VERIFY]** tags resolved in place. Remaining tags are Phase-2 pricing only.
+2. ✅ Synthetic fixture set built (`tests/fixtures/`), covering every §2.3/§2.4 quirk.
+3. ✅ Deliverable: updated plan + `tests/fixtures/*` + `tests/test_fixtures_sanity.py`.
 
-**Accept:** all [VERIFY] tags resolved to verified statements or documented fallbacks; fixtures
-parse as valid JSONL.
+**Accept:** all non-pricing [VERIFY] tags resolved; fixtures parse as valid JSONL and exercise
+each documented quirk. **Met.**
 
 ### Phase 1 — `scanner.py`
 
@@ -508,4 +554,5 @@ with no other steps, on Windows and POSIX.
 | gpt-5.4+ pricing unknown at planning time | Explicit Phase-2 verification task; n/a-if-unknown rule means wrong-by-omission, never wrong-by-fabrication |
 | Rate-limit snapshot bloat | 15-min downsampling at insert (§4.1) |
 | `session_index.jsonl` may not exist on all installs | Titles are optional decoration; sessions fall back to project name |
-| Compaction/context-trim may reset `total_token_usage` mid-thread | We record `last_token_usage` per event, so a totals reset only affects the diagnostic check — clamp diagnostic deltas at ≥ 0 and note resets in the warning |
+| ~~Compaction may reset `total_token_usage` mid-thread~~ **(Phase 0: not observed)** | Totals stayed monotonic in all 3 compaction files. We record `last_token_usage` per event regardless. Keep the diagnostic delta-clamp at ≥ 0 as cheap insurance against future drift |
+| Resumed sessions re-emit `session_meta` (up to 10×/file) | Key on `payload.id`, merge — never treat a repeat session_meta as a new session (§4.3) |
