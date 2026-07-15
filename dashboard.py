@@ -174,6 +174,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .cost-na { color:var(--muted); font-family:monospace; font-size:11px; }
   .tag { display:inline-block; padding:2px 7px; border-radius:4px; font-size:11px; }
   .tag.model { background:rgba(76,139,245,.15); color:var(--blue); }
+  .tag.model.est { background:rgba(217,168,78,.15); color:var(--amber); cursor:help; }
   .src-user { color:var(--green); }
   .src-subagent { color:var(--amber); }
   .src-automation { color:var(--blue); }
@@ -211,6 +212,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <option value="90d">Last 90 Days</option>
     <option value="all">All Time</option>
   </select>
+  <span class="filter-label">Cost in</span>
+  <select id="currency-select" onchange="setCurrency(this.value)" title="Codex/ChatGPT plans meter in credits (1 credit = $0.04); API bills in US dollars.">
+    <option value="usd">US$ (API)</option>
+    <option value="credits">Credits (plan)</option>
+  </select>
 </div>
 
 <div class="container">
@@ -232,7 +238,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <footer><div class="footer-content">
-  <p>Cost estimates use OpenAI API pricing (US$) as of 2026-07-15. Unlisted models show <em>n/a</em>. <em>codex-auto-review</em> (Codex&rsquo;s automatic code-review pass) has no published SKU &mdash; it is <em>estimated</em> at the gpt-5.4/terra tier. Subscription (Plus/Pro/Business) real costs differ from API pricing &mdash; the rate-limit chart above is the better signal for subscribers.</p>
+  <p>Cost basis: OpenAI pricing as of 2026-07-15. Use the <b>Cost in</b> toggle to switch between <b>US$</b> (API rates) and <b>Credits</b> (Codex/ChatGPT-plan metering; 1 credit = $0.04, i.e. API US$ &times; 25). Unlisted models show <em>n/a</em>.</p>
+  <p><b>*</b> <em>Estimated pricing.</em> <em>codex-auto-review</em> is Codex&rsquo;s automatic code-review pass and has <b>no published SKU</b> (OpenAI counts it toward general Codex usage); it is billed here at the gpt-5.4 / gpt-5.6-terra tier as an estimate. Subscription (Plus/Pro/Business) real costs differ from API pricing &mdash; the rate-limit chart is the better signal for subscribers.</p>
   <p>Reads local Codex rollout logs only &mdash; token counts and metadata, never conversation content. Modeled on <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a>. <span id="footer-meta"></span></p>
 </div></footer>
 
@@ -250,8 +257,24 @@ function calcCost(m, inp, cached, out){ const p=getPricing(m); if(!p) return 0; 
 function priced(m){ return getPricing(m)!==null; }
 
 function fmt(n){ n=n||0; if(n>=1e9) return (n/1e9).toFixed(2)+'B'; if(n>=1e6) return (n/1e6).toFixed(2)+'M'; if(n>=1e3) return (n/1e3).toFixed(1)+'K'; return Math.round(n).toLocaleString(); }
-function fmtCost(c){ return '$'+c.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 const MODEL_COLORS=['#10a37f','#4c8bf5','#d9a84e','#e5534b','#9b7ec7','#3fb950','#c2705a','#5bb8a3','#c77e9b'];
+
+// Cost display unit. Codex/ChatGPT plans meter in CREDITS; OpenAI's credit rate card equals the
+// API US$ rate x25 across every model (e.g. GPT-5.6 Sol $5.00 = 125 credits), i.e. 1 credit =
+// $0.04. So the toggle is a pure display conversion — no second pricing dict to keep in sync.
+const CREDITS_PER_USD = 25;
+let currency = 'usd';  // 'usd' | 'credits'
+function fmtMoney(usd){
+  if(currency==='credits') return Math.round(usd*CREDITS_PER_USD).toLocaleString()+' cr';
+  return '$'+usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function costUnitLabel(){ return currency==='credits'?'est. cost (credits)':'est. cost (US$)'; }
+
+// Estimated-pricing marker: codex-auto-review has no published SKU (§ Phase 3.5), so every place
+// its cost appears carries a "*" + explanatory tooltip.
+const EST_NOTE = 'Estimated pricing: codex-auto-review is Codex’s automatic code-review pass with no published SKU; billed here at the gpt-5.4 / gpt-5.6-terra tier.';
+function isEst(m){ return ESTIMATED.has(m); }
+function estStar(m){ return isEst(m) ? ' *' : ''; }
 
 let raw=null, model='all', range='30d', charts={}, sessLimit=15;
 let projSort='cost', sessSort='last';
@@ -263,8 +286,9 @@ function matchModel(m){ return model==='all' || m===model; }
 
 function setModel(v){ model=v; syncURL(); render(); }
 function setRange(v){ range=v; syncURL(); render(); }
+function setCurrency(v){ currency=v; localStorage.setItem('gptusage.currency', v); const s=document.getElementById('currency-select'); if(s) s.value=v; render(); }
 function syncURL(){ const p=new URLSearchParams(); if(model!=='all') p.set('model',model); p.set('range',range); history.replaceState(null,'',location.pathname+'?'+p.toString()); }
-function readURL(){ const p=new URLSearchParams(location.search); if(p.get('range')) range=p.get('range'); if(p.get('model')) model=p.get('model'); }
+function readURL(){ const p=new URLSearchParams(location.search); if(p.get('range')) range=p.get('range'); if(p.get('model')) model=p.get('model'); const c=localStorage.getItem('gptusage.currency'); if(c==='usd'||c==='credits') currency=c; }
 
 async function loadData(){
   try{
@@ -280,9 +304,10 @@ function showBanner(msg){ const b=document.getElementById('banner'); b.textConte
 function initModelFilter(){
   const sel=document.getElementById('model-select');
   sel.innerHTML='<option value="all">All models</option>';
-  (raw.all_models||[]).forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; sel.appendChild(o); });
+  (raw.all_models||[]).forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m+(isEst(m)?' * (est.)':''); sel.appendChild(o); });
   sel.value=model;
   document.getElementById('range-select').value=range;
+  document.getElementById('currency-select').value=currency;
 }
 
 async function triggerRescan(){
@@ -313,7 +338,7 @@ function renderStats(){
   const latest=rl.length?rl[rl.length-1]:null;
   const cards=[
     ['Today Tokens', fmt(tin+tout), fmt(tin)+' in / '+fmt(tout)+' out'],
-    ['Today Est. Cost', fmtCost(tcost), (tcached?Math.round(100*tcached/(tin||1)):0)+'% cached'],
+    ['Today Est. Cost', fmtMoney(tcost), (tcached?Math.round(100*tcached/(tin||1)):0)+'% cached'],
     ['Sessions Today', sessToday, fmt(treason)+' reasoning tok'],
     ['Plan', latest?latest.plan_type||'unknown':'—', latest&&latest.primary_pct!=null?latest.primary_pct.toFixed(1)+'% of '+winLabel(latest.primary_window)+' used':'no rate data'],
   ];
@@ -387,19 +412,23 @@ function renderCost(){
   const days=dayList();
   const idx=Object.fromEntries(days.map((d,i)=>[d,i]));
   const models=[...new Set(filteredDaily().map(d=>d.model))];
-  const datasets=models.map((m,k)=>{ const arr=days.map(()=>0); filteredDaily().filter(d=>d.model===m).forEach(d=>{ arr[idx[d.day]]+=calcCost(d.model,d.input,d.cached,d.output); }); return {label:m, data:arr, backgroundColor:MODEL_COLORS[k%MODEL_COLORS.length]}; });
+  // Data stays in USD; the credits view only re-labels the axis/tooltip (×25). Estimated
+  // models get a " *" in the legend label.
+  const datasets=models.map((m,k)=>{ const arr=days.map(()=>0); filteredDaily().filter(d=>d.model===m).forEach(d=>{ arr[idx[d.day]]+=calcCost(d.model,d.input,d.cached,d.output); }); return {label:m+estStar(m), data:arr, backgroundColor:MODEL_COLORS[k%MODEL_COLORS.length]}; });
+  const moneyTick=(v)=> currency==='credits' ? fmt(v*CREDITS_PER_USD) : usdFmt(v);
   mkChart('chart-cost',{ type:'bar', data:{labels:days, datasets},
     options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
-      scales:{ x:axis('date',{stacked:true}), y:axis('est. cost (USD)',{stacked:true, fmt:usdFmt}) },
+      scales:{ x:axis('date',{stacked:true}), y:axis(costUnitLabel(),{stacked:true, fmt:moneyTick}) },
       plugins:{ legend:{labels:{color:'#c7ccd6',boxWidth:12,font:{size:10}}},
-        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtCost(c.parsed.y)}} } } });
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.parsed.y)}} } } });
 }
 
 function renderModelMix(){
   const by={}; filteredDaily().forEach(d=>{ by[d.model]=(by[d.model]||0)+d.input+d.output; });
-  const labels=Object.keys(by); const data=labels.map(l=>by[l]);
+  const models=Object.keys(by); const data=models.map(l=>by[l]);
+  const labels=models.map(m=>m+estStar(m));
   const total=data.reduce((a,b)=>a+b,0)||1;
-  mkChart('chart-modelmix',{ type:'doughnut', data:{labels, datasets:[{data, backgroundColor:labels.map((_,i)=>MODEL_COLORS[i%MODEL_COLORS.length])}]},
+  mkChart('chart-modelmix',{ type:'doughnut', data:{labels, datasets:[{data, backgroundColor:models.map((_,i)=>MODEL_COLORS[i%MODEL_COLORS.length])}]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'right',labels:{color:'#c7ccd6',boxWidth:12,font:{size:11}}},
       tooltip:{callbacks:{label:c=>c.label+': '+fmt(c.parsed)+' tok ('+(100*c.parsed/total).toFixed(1)+'%)'}} } } });
 }
@@ -418,7 +447,7 @@ function renderProjects(){
   filteredSessions().forEach(s=>{ const p=by[s.project]||(by[s.project]={project:s.project, sessions:0, turns:0, input:0, cached:0, output:0, cost:0}); p.sessions++; p.turns+=s.turns; p.input+=s.input; p.cached+=s.cached; p.output+=s.output; p.cost+=calcCost(s.model,s.input,s.cached,s.output); });
   let rows=Object.values(by);
   rows.sort((a,b)=> projSort==='project' ? a.project.localeCompare(b.project) : b[projSort]-a[projSort]);
-  document.getElementById('projects-body').innerHTML=rows.map(p=>`<tr><td>${esc(p.project)}</td><td class="num">${p.sessions}</td><td class="num">${fmt(p.turns)}</td><td class="num">${fmt(p.input)}</td><td class="num">${fmt(p.output)}</td><td class="${p.cost?'cost':'cost-na'}">${p.cost?fmtCost(p.cost):'n/a'}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No data in range.</td></tr>';
+  document.getElementById('projects-body').innerHTML=rows.map(p=>`<tr><td>${esc(p.project)}</td><td class="num">${p.sessions}</td><td class="num">${fmt(p.turns)}</td><td class="num">${fmt(p.input)}</td><td class="num">${fmt(p.output)}</td><td class="${p.cost?'cost':'cost-na'}">${p.cost?fmtMoney(p.cost):'n/a'}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No data in range.</td></tr>';
 }
 
 function sortProjects(c){ projSort=c; renderProjects(); }
@@ -435,12 +464,12 @@ function renderSessions(){
     <td>${s.topic?esc(s.topic):'<span class="muted">untitled</span>'}</td>
     <td>${esc(s.project)}</td>
     <td class="${srcClass[s.source]||''}">${esc(s.source)}</td>
-    <td><span class="tag model">${esc(s.model)}</span></td>
+    <td><span class="tag model${isEst(s.model)?' est':''}"${isEst(s.model)?` title="${esc(EST_NOTE)}"`:''}>${esc(s.model)}${estStar(s.model)}</span></td>
     <td class="num">${esc(s.last)}</td>
     <td class="num">${fmt(s.turns)}</td>
     <td class="num">${fmt(s.input)}</td>
     <td class="num">${fmt(s.output)}</td>
-    <td class="${s._cost?'cost':'cost-na'}">${priced(s.model)?fmtCost(s._cost):'n/a'}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No sessions in range.</td></tr>';
+    <td class="${s._cost?'cost':'cost-na'}"${isEst(s.model)?` title="${esc(EST_NOTE)}"`:''}>${priced(s.model)?fmtMoney(s._cost)+estStar(s.model):'n/a'}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No sessions in range.</td></tr>';
   document.getElementById('sessions-more').style.display = rows.length>sessLimit ? 'inline-block' : 'none';
 }
 
