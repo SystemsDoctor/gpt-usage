@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.egg-info/
+
+# Local data / logs (the real DB lives in ~/.codex/gpt-usage.db, but guard against
+# accidental local copies)
+*.db
+*.sqlite
+*.sqlite3
+logs/
+server.log
+tmp/
+/tmp/
+
+# AI agent working artifacts — scratch scripts, session state, local settings, notes.
+# Committed files are deliverables only; agent scratch never enters git.
+.claude/
+.codex/
+.agents/
+.agent-scratch/
+notes/
+scratch/
+*.local.md
+CLAUDE.local.md
+AGENTS.local.md
+.pr-candidates.md
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
