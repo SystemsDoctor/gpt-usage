@@ -27,9 +27,18 @@ DB_PATH = Path(os.environ.get("GPT_USAGE_DB", Path.home() / ".codex" / "gpt-usag
 # calc_cost prices (input - cached) at the fresh rate and cached at the cached rate (§5).
 #
 # Prices verified against https://developers.openai.com/api/docs/pricing on 2026-07-15.
-# KEEP THIS PARITY with the PRICING const in dashboard.py (Phase 3) — a test guards it.
-# Unknown / unlisted models resolve to None -> billed $0, shown as n/a (deliberate: never
-# fabricate a price). codex-auto-review is the bundled review model, not a public API SKU.
+# This covers the full current GPT-5.4/5.5/5.6 roster and all subvariants (Phase 3.5 task 1).
+# KEEP THIS PARITY with the PRICING const in dashboard.py — a test guards it.
+#
+# PRICING SURFACE (Phase 3.5 task 1 decision): we price in **US dollars using OpenAI API
+# rates**. OpenAI also publishes a Codex/ChatGPT-plan *credit* rate card
+# (https://learn.chatgpt.com/docs/pricing, e.g. GPT-5.6 Sol = 125/12.5/750 credits per 1M).
+# Codex CLI users are on plan+credits+rate-limits, so a credit view may model their real spend
+# better — that's tracked as a possible future toggle, but $ is the universally legible basis
+# and the footer/README caveat that subscription costs differ. The rate-limit chart is the
+# better signal for plan users regardless (see dashboard).
+#
+# Unlisted models resolve to None -> billed $0, shown as n/a (deliberate: never fabricate).
 PRICING = {
     "gpt-5.6-sol":       {"input": 5.00, "cached": 0.50,  "output": 30.00},
     "gpt-5.6-terra":     {"input": 2.50, "cached": 0.25,  "output": 15.00},
@@ -42,8 +51,16 @@ PRICING = {
     "gpt-5.4":           {"input": 2.50, "cached": 0.25,  "output": 15.00},
     "gpt-5.3-codex":     {"input": 1.75, "cached": 0.175, "output": 14.00},
     "gpt-5":             {"input": 1.25, "cached": 0.125, "output": 10.00},
-    "codex-auto-review": None,
+    # codex-auto-review: Codex's automatic code-review pass (GitHub auto-reviews). OpenAI
+    # publishes NO separate SKU — docs say it "counts toward general Codex usage" under an
+    # underlying GPT model. Leaving it unpriced materially undercounts (418 turns locally), so
+    # we ESTIMATE it at the gpt-5.4 / gpt-5.6-terra tier that third-party trackers report
+    # ($2.50 / $0.25 / $15). Flagged as an estimate in the footer; revisit if OpenAI names the
+    # underlying model (Phase 3.5 task 2).
+    "codex-auto-review": {"input": 2.50, "cached": 0.25,  "output": 15.00},
 }
+# Models whose price is an estimate rather than a published SKU (for UI footnoting).
+ESTIMATED_PRICING = {"codex-auto-review"}
 # Longest-prefix first so gpt-5.4-mini wins over gpt-5.4, and gpt-5.6-sol over any gpt-5.6 stub.
 _PRICING_KEYS = sorted(PRICING, key=len, reverse=True)
 

@@ -29,6 +29,7 @@ def seed_db():
         ("s1", today + "T09:05:00Z", "gpt-5.6-sol", 500, 100, 80, 10, 0),
         ("s2", today + "T09:30:00Z", "gpt-5.4", 300, 0, 40, 5, 1),
         ("s1", today + "T09:40:00Z", "codex-auto-review", 200, 0, 15, 0, 0),
+        ("s1", today + "T09:45:00Z", "local-llama-7b", 200, 0, 15, 0, 0),
     ]
     conn.executemany(
         "INSERT INTO turns (session_id, timestamp, model, input_tokens, cached_input_tokens, "
@@ -53,10 +54,17 @@ class TestPricing(unittest.TestCase):
         # date-suffixed id resolves via startswith to the base tier
         self.assertEqual(cli.get_pricing("gpt-5.5-20260101")["input"], 5.00)
 
-    def test_unknown_and_review_are_none(self):
-        self.assertIsNone(cli.get_pricing("codex-auto-review"))
+    def test_unknown_models_are_none(self):
         self.assertIsNone(cli.get_pricing("mystery-model"))
+        self.assertIsNone(cli.get_pricing("local-llama-7b"))
         self.assertIsNone(cli.get_pricing(""))
+
+    def test_codex_auto_review_priced_as_estimate(self):
+        # Phase 3.5 task 2: now billed at the terra/5.4 tier, flagged as an estimate.
+        p = cli.get_pricing("codex-auto-review")
+        self.assertIsNotNone(p)
+        self.assertEqual(p["input"], 2.50)
+        self.assertIn("codex-auto-review", cli.ESTIMATED_PRICING)
 
     def test_cost_formula_cached_is_subset(self):
         # gpt-5.5: input 1000 (400 cached), output 100.
@@ -64,7 +72,7 @@ class TestPricing(unittest.TestCase):
         self.assertAlmostEqual(cli.calc_cost("gpt-5.5", 1000, 400, 100), 0.0062, places=6)
 
     def test_cost_zero_for_unpriced(self):
-        self.assertEqual(cli.calc_cost("codex-auto-review", 1000, 0, 100), 0.0)
+        self.assertEqual(cli.calc_cost("local-llama-7b", 1000, 0, 100), 0.0)
         self.assertEqual(cli.calc_cost("mystery", 1000, 0, 100), 0.0)
 
     def test_reasoning_not_priced_separately(self):
@@ -102,9 +110,14 @@ class TestCommands(unittest.TestCase):
 
     def test_today_unpriced_model_shows_na(self):
         out = self._run(cli.cmd_today)
-        # codex-auto-review row must render n/a, not $0.0000
-        line = [l for l in out.splitlines() if "codex-auto-review" in l][0]
+        # a genuinely unlisted model must render n/a, not $0.0000
+        line = [l for l in out.splitlines() if "local-llama-7b" in l][0]
         self.assertIn("n/a", line)
+
+    def test_today_codex_auto_review_now_priced(self):
+        out = self._run(cli.cmd_today)
+        line = [l for l in out.splitlines() if "codex-auto-review" in l][0]
+        self.assertNotIn("n/a", line)  # now billed at the estimated terra tier
 
     def test_stats_thread_source_split(self):
         out = self._run(cli.cmd_stats)
