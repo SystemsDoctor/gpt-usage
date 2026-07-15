@@ -138,7 +138,9 @@ def init_db(conn):
 
 def _ensure_column(conn, table, column, decl):
     """Add a column to an existing table if it isn't already present."""
-    cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    # PRAGMA table_info columns: (cid, name, type, ...). Index by position (1 = name) so this
+    # works whether or not the caller set a Row factory.
+    cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
     if column not in cols:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
         return True
