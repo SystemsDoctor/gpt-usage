@@ -510,7 +510,7 @@ finishes < 1s.
 **Accept:** tests pass; `today`/`week`/`stats` output correct on real data; unknown models show
 n/a and cost $0.
 
-### Phase 3 — `dashboard.py`
+### Phase 3 — `dashboard.py` — ✅ DONE
 
 1. Server + endpoints, ported structure from claude-usage's dashboard.py.
 2. Embedded HTML with §7 charts; JS pricing parity test.
@@ -518,7 +518,73 @@ n/a and cost $0.
    claude-usage's test-injection pattern of passing `db_path`/dirs explicitly).
 
 **Accept:** tests pass; `python cli.py dashboard` opens a working dashboard on :8090 against
-real data; both this and claude-usage's dashboard can run simultaneously.
+real data; both this and claude-usage's dashboard can run simultaneously. **Met.**
+
+### Phase 3.5 — Accuracy & clarity fixes (from maintainer physical test)
+
+Raised after a hands-on test of the shipped dashboard. Do these before Phase 4 ship-prep. Some
+carry preliminary findings from a scoping pass (2026-07-15) — treat those as leads, verify before
+implementing.
+
+1. **Complete the model + pricing coverage.** Include every model OpenAI currently offers on
+   consumer/business (ChatGPT/Codex) and API plans — GPT-5.4, 5.5, 5.6 and *all* subvariants
+   (sol / terra / luna / mini / nano / pro), gpt-5.3-codex(-spark), and any image/other SKUs a
+   Codex rollout could name. Reconcile the **two distinct OpenAI pricing surfaces** found while
+   scoping:
+   - **API pricing** (US$, `developers.openai.com/api/docs/pricing`) — what `cli.py`/`dashboard.py`
+     currently use.
+   - **Codex/ChatGPT-plan pricing** (**credits**, `learn.chatgpt.com/docs/pricing`) — e.g. GPT-5.6
+     Sol = 125 / 12.5 / 750 credits per 1M (input/cached/output). Codex CLI users are on
+     plan+credits+rate-limits, so the credit rate card may model their real spend better than API
+     dollars.
+   - **Decision to make & document:** price in US$ (API), show credits (plan), or offer both via a
+     toggle. Keep the Python/JS pricing dicts in sync + parity-tested whichever way this lands.
+
+2. **Resolve `codex-auto-review`.** Scoping found: it is Codex's *automatic code-review* pass
+   (GitHub-integration "auto reviews"), it appears as a first-class `model` in `turn_context`
+   (418 turns locally), and **OpenAI publishes no separate SKU** — official docs say auto-review
+   "counts toward general Codex usage" (billed as normal Codex usage under an underlying GPT
+   model). Third-party trackers assign it the gpt-5.4/terra tier (~$2.50 in / $15 out per 1M).
+   → **Current behavior undercounts:** we bill it `None`→`n/a`→$0. Task: confirm the underlying
+   model/tier from OpenAI docs, then either (a) price it at the terra/5.4 tier, or (b) keep n/a
+   with a visible footnote — and document which, and why, in README + plan §5.
+
+3. **Fix output-token visibility in the daily chart.** Output tokens **are** captured correctly
+   (verified: 1.11M output all-time; 393K on 2026-07-15) — the bug is visual. Codex is extremely
+   input-heavy: output is ~0.3% of input (~9% even of *fresh*, non-cached input), so on a linear
+   stacked bar dominated by ~140M mostly-cached input the output slice is sub-pixel. Fix by
+   plotting output on its own axis/series: e.g. a secondary y-axis line for output, a dedicated
+   "output tokens/day" chart, or split input-vs-output into two panels. Add a short note that
+   input ≫ output is expected for Codex (large context, small generations).
+
+4. **Explain the Primary vs. Secondary rate-limit lines.** They are Codex's two rolling
+   rate-limit windows (Phase 0 census: `primary.window_minutes` 10080 = weekly in recent data;
+   older files also carry a shorter `secondary` window e.g. 300 min = 5h). Add an in-UI legend/
+   tooltip/caption naming each window (derive the human label from `window_minutes`, as the CLI
+   already does) and stating that % is share of that window's allowance consumed, with the reset
+   time. Handle the null-secondary case gracefully.
+
+5. **Add units to every chart axis.** Token charts → "tokens" (with K/M suffix), cost chart →
+   "$" (or credits, per task 1), rate-limit chart → "% of window used", hourly → "turns". Label
+   both axes where meaningful; keep tooltips unit-aware too.
+
+6. **Scope a unified claude-usage + gpt-usage fork.** Investigate the cleanest way to observe
+   both Claude and Codex/GPT usage from one dashboard. Deliverable is a written scoping doc (not
+   an implementation), covering at least:
+   - **Data-model reconciliation:** Anthropic (separate cache fields, message-id dedup) vs OpenAI
+     (input-includes-cached, no message id, model on `turn_context`, rate-limit logging). A shared
+     schema vs two schemas behind a common query layer.
+   - **Provider abstraction:** one scanner dispatching to per-provider parsers; a `provider` column
+     on turns/sessions; provider-aware pricing.
+   - **Dashboard UX:** provider filter/toggle, unified vs side-by-side charts, cost normalization
+     (Anthropic $ vs OpenAI $/credits).
+   - **Fork logistics:** fork `phuryn/claude-usage` and add a Codex provider, vs keep two tools and
+     add a combined view; upstreamability; how to keep the stdlib-only / three-file ethos (or
+     whether a unified tool justifies relaxing it). Preserve MIT + attribution either way.
+
+**Accept:** tasks 1–5 implemented, tested (pricing parity stays green), and eyeballed on real
+data; task 6 delivered as a scoping doc under `docs/`. Model/pricing decisions recorded in
+README + plan §5.
 
 ### Phase 4 — Polish & release readiness
 
@@ -551,7 +617,9 @@ with no other steps, on Windows and POSIX.
 |---|---|
 | Codex rollout schema keeps drifting (9 cli_versions in 5 months locally) | Defensive `.get()` everywhere; unknown types skipped; fixture per known variant; Phase-0 census re-runnable anytime |
 | Resumed/forked sessions double-count if files are rewritten, not appended | Phase-0 verification; `lines`-shrank fallback (§4.3); reconciliation warning (§4.4) |
-| gpt-5.4+ pricing unknown at planning time | Explicit Phase-2 verification task; n/a-if-unknown rule means wrong-by-omission, never wrong-by-fabrication |
+| ~~gpt-5.4+ pricing unknown at planning time~~ **(Phase 2: verified in US$)** | Prices filled from live API pricing (2026-07-15). **Open (Phase 3.5 task 1):** a second surface — Codex/ChatGPT *credit* pricing — may model Codex-plan users better than API $; reconcile the two |
+| `codex-auto-review` billed as `n/a`/$0 undercounts cost | Phase 3.5 task 2: it's a real Codex usage pass (418 turns locally) with no separate SKU; decide terra/5.4-tier pricing vs footnoted n/a and document |
+| Output tokens invisible in daily chart (input ≫ output for Codex) | Phase 3.5 task 3: data is correct (output ≈0.3% of input); plot output on its own axis/series |
 | Rate-limit snapshot bloat | 15-min downsampling at insert (§4.1) |
 | `session_index.jsonl` may not exist on all installs | Titles are optional decoration; sessions fall back to project name |
 | ~~Compaction may reset `total_token_usage` mid-thread~~ **(Phase 0: not observed)** | Totals stayed monotonic in all 3 compaction files. We record `last_token_usage` per event regardless. Keep the diagnostic delta-clamp at ≥ 0 as cheap insurance against future drift |
