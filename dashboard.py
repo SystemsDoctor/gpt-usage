@@ -158,7 +158,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .chart-card h2:hover { color:var(--text); }
   .card-caret { display:inline-block; width:.9em; margin-right:6px; transform:rotate(90deg); transition:transform .15s; }
   .collapsed .card-caret { transform:rotate(0deg); }
-  .collapsed .chart-wrap, .collapsed table, .collapsed .table-foot { display:none; }
+  .collapsed .chart-wrap, .collapsed table, .collapsed .table-foot, .collapsed .caption { display:none; }
+  .caption { font-size:11px; color:var(--muted); margin-top:10px; line-height:1.5; }
+  .caption b { color:var(--text); font-weight:600; }
   .chart-wrap { position:relative; height:240px; }
   .chart-wrap.tall { height:300px; }
   table { width:100%; border-collapse:collapse; }
@@ -214,7 +216,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="container">
   <div class="stats-row" id="stats-row"></div>
   <div class="charts-grid">
-    <div class="chart-card wide" data-card="ratelimit"><h2><span class="card-caret">&#9656;</span>Rate-Limit Usage Over Time</h2><div class="chart-wrap tall"><canvas id="chart-ratelimit"></canvas></div></div>
+    <div class="chart-card wide" data-card="ratelimit"><h2><span class="card-caret">&#9656;</span>Rate-Limit Usage Over Time</h2><div class="chart-wrap tall"><canvas id="chart-ratelimit"></canvas></div><div class="caption" id="rl-caption"></div></div>
     <div class="chart-card wide" data-card="daily"><h2><span class="card-caret">&#9656;</span>Daily Tokens</h2><div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div></div>
     <div class="chart-card" data-card="cost"><h2><span class="card-caret">&#9656;</span>Daily Cost by Model</h2><div class="chart-wrap"><canvas id="chart-cost"></canvas></div></div>
     <div class="chart-card" data-card="modelmix"><h2><span class="card-caret">&#9656;</span>Model Mix (tokens)</h2><div class="chart-wrap"><canvas id="chart-modelmix"></canvas></div></div>
@@ -230,7 +232,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <footer><div class="footer-content">
-  <p>Cost estimates use OpenAI API pricing as of 2026-07-15. Unlisted models (and <em>codex-auto-review</em>) show <em>n/a</em>. Subscription (Plus/Pro/Business) real costs differ from API pricing &mdash; the rate-limit chart above is the better signal for subscribers.</p>
+  <p>Cost estimates use OpenAI API pricing (US$) as of 2026-07-15. Unlisted models show <em>n/a</em>. <em>codex-auto-review</em> (Codex&rsquo;s automatic code-review pass) has no published SKU &mdash; it is <em>estimated</em> at the gpt-5.4/terra tier. Subscription (Plus/Pro/Business) real costs differ from API pricing &mdash; the rate-limit chart above is the better signal for subscribers.</p>
   <p>Reads local Codex rollout logs only &mdash; token counts and metadata, never conversation content. Modeled on <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a>. <span id="footer-meta"></span></p>
 </div></footer>
 
@@ -239,7 +241,9 @@ const CFG = window.APP_CONFIG || {version:'?'};
 function esc(s){ const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; }
 
 // PRICING — keep in sync with cli.py PRICING (parity-tested). $ per MTok.
-const PRICING = {"gpt-5.6-sol":{"input":5.0,"cached":0.5,"output":30.0},"gpt-5.6-terra":{"input":2.5,"cached":0.25,"output":15.0},"gpt-5.6-luna":{"input":1.0,"cached":0.1,"output":6.0},"gpt-5.5-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.5":{"input":5.0,"cached":0.5,"output":30.0},"gpt-5.4-mini":{"input":0.75,"cached":0.075,"output":4.5},"gpt-5.4-nano":{"input":0.2,"cached":0.02,"output":1.25},"gpt-5.4-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.4":{"input":2.5,"cached":0.25,"output":15.0},"gpt-5.3-codex":{"input":1.75,"cached":0.175,"output":14.0},"gpt-5":{"input":1.25,"cached":0.125,"output":10.0},"codex-auto-review":null};
+const PRICING = {"gpt-5.6-sol":{"input":5.0,"cached":0.5,"output":30.0},"gpt-5.6-terra":{"input":2.5,"cached":0.25,"output":15.0},"gpt-5.6-luna":{"input":1.0,"cached":0.1,"output":6.0},"gpt-5.5-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.5":{"input":5.0,"cached":0.5,"output":30.0},"gpt-5.4-mini":{"input":0.75,"cached":0.075,"output":4.5},"gpt-5.4-nano":{"input":0.2,"cached":0.02,"output":1.25},"gpt-5.4-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.4":{"input":2.5,"cached":0.25,"output":15.0},"gpt-5.3-codex":{"input":1.75,"cached":0.175,"output":14.0},"gpt-5":{"input":1.25,"cached":0.125,"output":10.0},"codex-auto-review":{"input":2.5,"cached":0.25,"output":15.0}};
+// codex-auto-review price is an ESTIMATE (terra/5.4 tier) — OpenAI publishes no SKU (§ Phase 3.5).
+const ESTIMATED = new Set(["codex-auto-review"]);
 const PRICING_KEYS = Object.keys(PRICING).sort((a,b)=>b.length-a.length);
 function getPricing(m){ if(!m) return null; if(m in PRICING) return PRICING[m]; for(const k of PRICING_KEYS){ if(m.startsWith(k)) return PRICING[k]; } return null; }
 function calcCost(m, inp, cached, out){ const p=getPricing(m); if(!p) return 0; const fresh=Math.max(inp-cached,0); return fresh*p.input/1e6 + cached*p.cached/1e6 + out*p.output/1e6; }
@@ -315,22 +319,42 @@ function renderStats(){
   ];
   document.getElementById('stats-row').innerHTML=cards.map(c=>`<div class="stat-card"><div class="label">${esc(c[0])}</div><div class="value">${esc(c[1])}</div><div class="sub">${esc(c[2])}</div></div>`).join('');
 }
-function winLabel(m){ if(!m) return 'window'; if(m%10080===0) return (m/10080)+'w'; if(m%1440===0) return (m/1440)+'d'; if(m%60===0) return (m/60)+'h'; return m+'m'; }
+function winLabel(m){ if(!m) return 'rolling'; if(m%10080===0){ const w=m/10080; return w===1?'weekly':w+'-week'; } if(m%1440===0){ const d=m/1440; return d===1?'daily':d+'-day'; } if(m%60===0) return (m/60)+'-hour'; return m+'-min'; }
+function fmtReset(epoch){ if(!epoch) return '?'; try{ return new Date(epoch*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '?'; } }
 
 function mkChart(id, cfg){ if(charts[id]) charts[id].destroy(); const el=document.getElementById(id); if(el) charts[id]=new Chart(el, cfg); }
 const AXIS={ ticks:{color:'#6b7280'}, grid:{color:'#262b36'} };
+// Axis with a title label and optional value formatter (task 5: units on every axis).
+function axis(title, opts){ opts=opts||{}; return { ticks:{color:'#6b7280', callback:opts.fmt}, grid:opts.noGrid?{drawOnChartArea:false}:{color:'#262b36'}, stacked:!!opts.stacked, position:opts.position, min:opts.min, suggestedMax:opts.max, title:{display:!!title, text:title, color:'#6b7280'} }; }
+const tokFmt=(v)=>fmt(v);
+const usdFmt=(v)=>'$'+v;
 
 function renderRateLimit(){
   const rows=filteredRL();
   const labels=rows.map(r=>r.timestamp?r.timestamp.slice(5,16).replace('T',' '):'');
-  mkChart('chart-ratelimit',{ type:'line',
-    data:{ labels, datasets:[
-      {label:'Primary %', data:rows.map(r=>r.primary_pct), borderColor:'#10a37f', backgroundColor:'#10a37f22', tension:.25, pointRadius:0, spanGaps:true},
-      {label:'Secondary %', data:rows.map(r=>r.secondary_pct), borderColor:'#4c8bf5', backgroundColor:'#4c8bf522', tension:.25, pointRadius:0, spanGaps:true},
-    ]},
+  // Window semantics changed across Codex versions (older builds used primary=5h/secondary=weekly;
+  // recent builds use primary=weekly/secondary=none). Describe the CURRENT window from the latest
+  // snapshot so the caption matches the Plan tile, not a stale early record.
+  const latest=rows.length?rows[rows.length-1]:null;
+  const pWin=latest?latest.primary_window:null;
+  const sWin=latest?latest.secondary_window:null;
+  const latestHasSec=!!(latest && latest.secondary_pct!=null);
+  const anySec=rows.some(r=>r.secondary_pct!=null);  // plot the series if ANY point has it
+  const ds=[{label:'Primary — '+winLabel(pWin)+' window', data:rows.map(r=>r.primary_pct), borderColor:'#10a37f', backgroundColor:'#10a37f22', tension:.25, pointRadius:0, spanGaps:true}];
+  if(anySec) ds.push({label:'Secondary'+(sWin?' — '+winLabel(sWin)+' window':''), data:rows.map(r=>r.secondary_pct), borderColor:'#4c8bf5', backgroundColor:'#4c8bf522', tension:.25, pointRadius:0, spanGaps:true});
+  mkChart('chart-ratelimit',{ type:'line', data:{ labels, datasets:ds },
     options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
-      scales:{ x:AXIS, y:{...AXIS, min:0, suggestedMax:100, title:{display:true,text:'% used',color:'#6b7280'}} },
-      plugins:{ legend:{labels:{color:'#c7ccd6'}} } } });
+      scales:{ x:axis('time'), y:axis('% of window used',{min:0,max:100}) },
+      plugins:{ legend:{labels:{color:'#c7ccd6'}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':c.parsed.y.toFixed(1)+'%')}} } } });
+  const cap=document.getElementById('rl-caption');
+  if(cap){
+    cap.innerHTML='Codex enforces a rolling usage limit. <b>Primary</b> is your '
+      +winLabel(pWin)+' allowance'+(latestHasSec?'; <b>secondary</b> is the '+winLabel(sWin)+' allowance':'')
+      +'. The line is the share of that window&rsquo;s allowance consumed so far (0&ndash;100%), resetting at the window boundary'
+      +(latest&&latest.primary_resets_at?' &mdash; primary resets '+fmtReset(latest.primary_resets_at):'')
+      +'. (Older Codex builds logged different windows, so early points may reflect a shorter window.)';
+  }
 }
 
 function dayList(){ const days=new Set(); filteredDaily().forEach(d=>days.add(d.day)); return [...days].sort(); }
@@ -341,15 +365,22 @@ function renderDaily(){
   const mk=()=>days.map(()=>0);
   const fresh=mk(), cached=mk(), out=mk();
   filteredDaily().forEach(d=>{ const i=idx[d.day]; fresh[i]+=Math.max(d.input-d.cached,0); cached[i]+=d.cached; out[i]+=d.output; });
-  mkChart('chart-daily',{ type:'bar',
+  // Codex is hugely input-heavy: output is ~0.3% of input, so it's sub-pixel if stacked with
+  // input. Plot output as a line on its own right axis so it's actually visible (§3.5 task 3).
+  mkChart('chart-daily',{
     data:{ labels:days, datasets:[
-      {label:'Fresh input', data:fresh, backgroundColor:'#4c8bf5cc'},
-      {label:'Cached input', data:cached, backgroundColor:'#5bb8a3cc'},
-      {label:'Output', data:out, backgroundColor:'#d97757cc'},
+      {type:'bar', label:'Fresh input', data:fresh, backgroundColor:'#4c8bf5cc', yAxisID:'y', stack:'in'},
+      {type:'bar', label:'Cached input', data:cached, backgroundColor:'#5bb8a3cc', yAxisID:'y', stack:'in'},
+      {type:'line', label:'Output (right axis)', data:out, borderColor:'#d97757', backgroundColor:'#d97757', yAxisID:'y1', tension:.25, pointRadius:2, borderWidth:2},
     ]},
-    options:{ responsive:true, maintainAspectRatio:false,
-      scales:{ x:{...AXIS, stacked:true}, y:{...AXIS, stacked:true} },
-      plugins:{ legend:{labels:{color:'#c7ccd6'}} } } });
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      scales:{
+        x:axis('date',{stacked:true}),
+        y:axis('input tokens',{stacked:true, fmt:tokFmt}),
+        y1:axis('output tokens',{position:'right', noGrid:true, fmt:tokFmt}),
+      },
+      plugins:{ legend:{labels:{color:'#c7ccd6'}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.y)+' tok'}} } } });
 }
 
 function renderCost(){
@@ -358,24 +389,28 @@ function renderCost(){
   const models=[...new Set(filteredDaily().map(d=>d.model))];
   const datasets=models.map((m,k)=>{ const arr=days.map(()=>0); filteredDaily().filter(d=>d.model===m).forEach(d=>{ arr[idx[d.day]]+=calcCost(d.model,d.input,d.cached,d.output); }); return {label:m, data:arr, backgroundColor:MODEL_COLORS[k%MODEL_COLORS.length]}; });
   mkChart('chart-cost',{ type:'bar', data:{labels:days, datasets},
-    options:{ responsive:true, maintainAspectRatio:false,
-      scales:{ x:{...AXIS, stacked:true}, y:{...AXIS, stacked:true} },
-      plugins:{ legend:{labels:{color:'#c7ccd6',boxWidth:12,font:{size:10}}} } } });
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      scales:{ x:axis('date',{stacked:true}), y:axis('est. cost (USD)',{stacked:true, fmt:usdFmt}) },
+      plugins:{ legend:{labels:{color:'#c7ccd6',boxWidth:12,font:{size:10}}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtCost(c.parsed.y)}} } } });
 }
 
 function renderModelMix(){
   const by={}; filteredDaily().forEach(d=>{ by[d.model]=(by[d.model]||0)+d.input+d.output; });
   const labels=Object.keys(by); const data=labels.map(l=>by[l]);
+  const total=data.reduce((a,b)=>a+b,0)||1;
   mkChart('chart-modelmix',{ type:'doughnut', data:{labels, datasets:[{data, backgroundColor:labels.map((_,i)=>MODEL_COLORS[i%MODEL_COLORS.length])}]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right',labels:{color:'#c7ccd6',boxWidth:12,font:{size:11}}}} } });
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'right',labels:{color:'#c7ccd6',boxWidth:12,font:{size:11}}},
+      tooltip:{callbacks:{label:c=>c.label+': '+fmt(c.parsed)+' tok ('+(100*c.parsed/total).toFixed(1)+'%)'}} } } });
 }
 
 function renderHourly(){
   const off=-new Date().getTimezoneOffset()/60|0;
   const buckets=new Array(24).fill(0);
   filteredHourly().forEach(h=>{ const lh=((h.hour+off)%24+24)%24; buckets[lh]+=h.turns; });
-  mkChart('chart-hourly',{ type:'bar', data:{labels:[...Array(24).keys()].map(h=>String(h).padStart(2,'0')), datasets:[{label:'Turns', data:buckets, backgroundColor:'#10a37fcc'}]},
-    options:{ responsive:true, maintainAspectRatio:false, scales:{x:AXIS,y:AXIS}, plugins:{legend:{display:false}} } });
+  mkChart('chart-hourly',{ type:'bar', data:{labels:[...Array(24).keys()].map(h=>String(h).padStart(2,'0')+':00'), datasets:[{label:'Turns', data:buckets, backgroundColor:'#10a37fcc'}]},
+    options:{ responsive:true, maintainAspectRatio:false, scales:{x:axis('hour of day (local)'), y:axis('turns')},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmt(c.parsed.y)+' turns'}}} } });
 }
 
 function renderProjects(){
