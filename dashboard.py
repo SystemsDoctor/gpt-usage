@@ -181,6 +181,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .table-card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:20px; margin-bottom:24px; overflow-x:auto; }
   .table-card h2 { font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:12px; cursor:pointer; user-select:none; }
   .table-card h2:hover { color:var(--text); }
+  .section-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .section-header h2 { margin-bottom:0; }
   .table-foot { display:flex; justify-content:flex-end; margin-top:12px; }
   .show-more { background:transparent; border:1px solid var(--border); color:var(--muted); padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; }
   .show-more:hover { color:var(--text); border-color:var(--accent); }
@@ -207,6 +209,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <span class="filter-label">Range</span>
   <select id="range-select" onchange="setRange(this.value)">
     <option value="today">Today</option>
+    <option value="week">This Week</option>
+    <option value="month">This Month</option>
+    <option value="prev-month">Previous Month</option>
     <option value="7d">Last 7 Days</option>
     <option value="30d" selected>Last 30 Days</option>
     <option value="90d">Last 90 Days</option>
@@ -226,12 +231,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="chart-card wide" data-card="daily"><h2><span class="card-caret">&#9656;</span>Daily Tokens</h2><div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div></div>
     <div class="chart-card" data-card="cost"><h2><span class="card-caret">&#9656;</span>Daily Cost by Model</h2><div class="chart-wrap"><canvas id="chart-cost"></canvas></div></div>
     <div class="chart-card" data-card="modelmix"><h2><span class="card-caret">&#9656;</span>Model Mix (tokens)</h2><div class="chart-wrap"><canvas id="chart-modelmix"></canvas></div></div>
-    <div class="chart-card wide" data-card="hourly"><h2><span class="card-caret">&#9656;</span>Usage by Hour (local)</h2><div class="chart-wrap"><canvas id="chart-hourly"></canvas></div></div>
+    <div class="chart-card" data-card="projectchart"><h2><span class="card-caret">&#9656;</span>Top Projects by Tokens</h2><div class="chart-wrap"><canvas id="chart-project"></canvas></div></div>
+    <div class="chart-card" data-card="sourcechart"><h2><span class="card-caret">&#9656;</span>Tokens by Thread Source</h2><div class="chart-wrap"><canvas id="chart-source"></canvas></div></div>
+    <div class="chart-card wide" data-card="hourly"><h2><span class="card-caret">&#9656;</span>Usage by Hour (local)</h2><div class="chart-wrap"><canvas id="chart-hourly"></canvas></div><div class="caption" id="hourly-caption"></div></div>
   </div>
-  <div class="table-card" data-card="projects"><h2><span class="card-caret">&#9656;</span>Projects</h2>
+  <div class="table-card" data-card="modeltable"><div class="section-header"><h2><span class="card-caret">&#9656;</span>By Model</h2><button class="show-more" onclick="exportCSV('model')" title="Export to CSV">&#x2913; CSV</button></div>
+    <table><thead><tr><th onclick="sortModel('model')">Model</th><th onclick="sortModel('sessions')">Sessions</th><th onclick="sortModel('turns')">Turns</th><th onclick="sortModel('input')">Input</th><th onclick="sortModel('cached')">Cached</th><th onclick="sortModel('output')">Output</th><th onclick="sortModel('cost')">Est. Cost</th></tr></thead>
+    <tbody id="model-body"></tbody></table></div>
+  <div class="table-card" data-card="projects"><div class="section-header"><h2><span class="card-caret">&#9656;</span>Projects</h2><button class="show-more" onclick="exportCSV('projects')" title="Export to CSV">&#x2913; CSV</button></div>
     <table><thead><tr><th onclick="sortProjects('project')">Project</th><th onclick="sortProjects('sessions')">Sessions</th><th onclick="sortProjects('turns')">Turns</th><th onclick="sortProjects('input')">Input</th><th onclick="sortProjects('output')">Output</th><th onclick="sortProjects('cost')">Est. Cost</th></tr></thead>
     <tbody id="projects-body"></tbody></table></div>
-  <div class="table-card" data-card="sessions"><h2><span class="card-caret">&#9656;</span>Sessions</h2>
+  <div class="table-card" data-card="sessions"><div class="section-header"><h2><span class="card-caret">&#9656;</span>Sessions</h2><button class="show-more" onclick="exportCSV('sessions')" title="Export to CSV">&#x2913; CSV</button></div>
     <table><thead><tr><th>Title</th><th>Project</th><th>Source</th><th>Model</th><th onclick="sortSessions('last')">Last</th><th onclick="sortSessions('turns')">Turns</th><th onclick="sortSessions('input')">Input</th><th onclick="sortSessions('output')">Output</th><th onclick="sortSessions('cost')">Est. Cost</th></tr></thead>
     <tbody id="sessions-body"></tbody></table>
     <div class="table-foot"><button class="show-more" id="sessions-more" onclick="moreSessions()">Show more</button></div></div>
@@ -277,11 +287,22 @@ function isEst(m){ return ESTIMATED.has(m); }
 function estStar(m){ return isEst(m) ? ' *' : ''; }
 
 let raw=null, model='all', range='30d', charts={}, sessLimit=15;
-let projSort='cost', sessSort='last';
+let projSort='cost', sessSort='last', modelSort='cost';
 
-function todayISO(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-function rangeStart(r){ if(r==='all') return null; if(r==='today') return todayISO(); const days=r==='7d'?7:r==='30d'?30:90; const d=new Date(); d.setDate(d.getDate()-days); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-function inRange(day){ const s=rangeStart(range); if(range==='today') return day===todayISO(); return !s || day>=s; }
+function ymd(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function todayISO(){ return ymd(new Date()); }
+// Calendar-aligned ranges (week/month/prev-month) use local calendar components, never
+// toISOString()/UTC — a UTC-based bound is wrong for any UTC+ reader near midnight.
+function rangeBounds(r){
+  const now=new Date();
+  if(r==='all') return {start:null, end:null};
+  if(r==='today') return {start:todayISO(), end:todayISO()};
+  if(r==='week'){ const d=new Date(now); const dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow); return {start:ymd(d), end:todayISO()}; }
+  if(r==='month'){ return {start:ymd(new Date(now.getFullYear(),now.getMonth(),1)), end:todayISO()}; }
+  if(r==='prev-month'){ return {start:ymd(new Date(now.getFullYear(),now.getMonth()-1,1)), end:ymd(new Date(now.getFullYear(),now.getMonth(),0))}; }
+  const days=r==='7d'?7:r==='30d'?30:90; const d=new Date(now); d.setDate(d.getDate()-days); return {start:ymd(d), end:null};
+}
+function inRange(day){ const {start,end}=rangeBounds(range); if(start&&day<start) return false; if(end&&day>end) return false; return true; }
 function matchModel(m){ return model==='all' || m===model; }
 
 function setModel(v){ model=v; syncURL(); render(); }
@@ -325,21 +346,32 @@ function filteredHourly(){ return (raw.hourly||[]).filter(h=>inRange(h.day)); }
 
 function render(){
   renderStats(); renderRateLimit(); renderDaily(); renderCost(); renderModelMix(); renderHourly();
+  renderProjectsChart(); renderSourceChart(); renderModelTable();
   renderProjects(); renderSessions();
 }
 
+const RANGE_LABELS={today:'today', week:'this week', month:'this month', 'prev-month':'previous month', '7d':'last 7 days', '30d':'last 30 days', '90d':'last 90 days', all:'all time'};
+
 function renderStats(){
-  const today=todayISO();
-  const td=(raw.daily_by_model||[]).filter(d=>d.day===today&&matchModel(d.model));
-  let tin=0,tout=0,tcached=0,tcost=0,treason=0;
-  td.forEach(d=>{ tin+=d.input; tout+=d.output; tcached+=d.cached; treason+=d.reasoning; tcost+=calcCost(d.model,d.input,d.cached,d.output); });
-  const sessToday=new Set(filteredSessions().filter(s=>s.day===today).map(s=>s.session_id)).size;
+  const sessions=filteredSessions();
+  let turns=0,input=0,cached=0,output=0,reasoning=0,cost=0,subTokens=0;
+  sessions.forEach(s=>{
+    turns+=s.turns; input+=s.input; cached+=s.cached; output+=s.output; reasoning+=s.reasoning;
+    cost+=calcCost(s.model,s.input,s.cached,s.output);
+    if(s.source==='subagent') subTokens+=s.input+s.output;
+  });
   const rl=(raw.rate_limits||[]);
   const latest=rl.length?rl[rl.length-1]:null;
+  const rangeLabel=RANGE_LABELS[range]||range;
   const cards=[
-    ['Today Tokens', fmt(tin+tout), fmt(tin)+' in / '+fmt(tout)+' out'],
-    ['Today Est. Cost', fmtMoney(tcost), (tcached?Math.round(100*tcached/(tin||1)):0)+'% cached'],
-    ['Sessions Today', sessToday, fmt(treason)+' reasoning tok'],
+    ['Sessions', sessions.length.toLocaleString(), rangeLabel],
+    ['Turns', fmt(turns), rangeLabel],
+    ['Input Tokens', fmt(input), rangeLabel],
+    ['Cached Input', fmt(cached), (input?Math.round(100*cached/input):0)+'% of input'],
+    ['Output Tokens', fmt(output), rangeLabel],
+    ['Reasoning Tokens', fmt(reasoning), 'subset of output'],
+    ['Subagent Tokens', fmt(subTokens), 'included in totals'],
+    ['Est. Cost', fmtMoney(cost), rangeLabel],
     ['Plan', latest?latest.plan_type||'unknown':'—', latest&&latest.primary_pct!=null?latest.primary_pct.toFixed(1)+'% of '+winLabel(latest.primary_window)+' used':'no rate data'],
   ];
   document.getElementById('stats-row').innerHTML=cards.map(c=>`<div class="stat-card"><div class="label">${esc(c[0])}</div><div class="value">${esc(c[1])}</div><div class="sub">${esc(c[2])}</div></div>`).join('');
@@ -433,22 +465,86 @@ function renderModelMix(){
       tooltip:{callbacks:{label:c=>c.label+': '+fmt(c.parsed)+' tok ('+(100*c.parsed/total).toFixed(1)+'%)'}} } } });
 }
 
+function renderProjectsChart(){
+  const top=groupByProject(filteredSessions()).sort((a,b)=>(b.input+b.output)-(a.input+a.output)).slice(0,10);
+  const labels=top.map(p=>p.project.length>22?'…'+p.project.slice(-20):p.project);
+  mkChart('chart-project',{ type:'bar', data:{ labels, datasets:[
+      {label:'Input', data:top.map(p=>p.input), backgroundColor:'#4c8bf5cc'},
+      {label:'Output', data:top.map(p=>p.output), backgroundColor:'#d97757cc'},
+    ]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      scales:{ x:axis('tokens',{fmt:tokFmt}), y:{ticks:{color:'#6b7280',font:{size:11}}, grid:{color:'#262b36'}} },
+      plugins:{ legend:{labels:{color:'#c7ccd6'}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.x)+' tok'}} } } });
+}
+
+function renderSourceChart(){
+  // Bucket by whatever thread_source values actually appear (schema drift observed locally:
+  // real data carries at least user/subagent/automation/chatgpt_handoff) — never silently fold
+  // an unrecognized source into "user".
+  const by={};
+  filteredSessions().forEach(s=>{ const key=s.source||'unknown'; const b=by[key]||(by[key]={fresh:0,cached:0,output:0}); b.fresh+=Math.max(s.input-s.cached,0); b.cached+=s.cached; b.output+=s.output; });
+  const order=['user','subagent','automation'];
+  const labels=order.filter(l=>by[l]).concat(Object.keys(by).filter(l=>!order.includes(l)).sort());
+  mkChart('chart-source',{ type:'bar', data:{ labels, datasets:[
+      {label:'Fresh input', data:labels.map(l=>by[l].fresh), backgroundColor:'#4c8bf5cc', stack:'tok'},
+      {label:'Cached input', data:labels.map(l=>by[l].cached), backgroundColor:'#5bb8a3cc', stack:'tok'},
+      {label:'Output', data:labels.map(l=>by[l].output), backgroundColor:'#d97757cc', stack:'tok'},
+    ]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      scales:{ x:axis('tokens',{stacked:true, fmt:tokFmt}), y:{stacked:true, ticks:{color:'#6b7280'}, grid:{color:'#262b36'}} },
+      plugins:{ legend:{labels:{color:'#c7ccd6'}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.x)+' tok'}} } } });
+}
+
 function renderHourly(){
+  // Raw sums get misleading as the range grows (30d "hourly" totals dwarf 7d ones for reasons
+  // having nothing to do with usage pattern) — average per day-in-range instead (§3.6 task 7).
   const off=-new Date().getTimezoneOffset()/60|0;
-  const buckets=new Array(24).fill(0);
-  filteredHourly().forEach(h=>{ const lh=((h.hour+off)%24+24)%24; buckets[lh]+=h.turns; });
-  mkChart('chart-hourly',{ type:'bar', data:{labels:[...Array(24).keys()].map(h=>String(h).padStart(2,'0')+':00'), datasets:[{label:'Turns', data:buckets, backgroundColor:'#10a37fcc'}]},
-    options:{ responsive:true, maintainAspectRatio:false, scales:{x:axis('hour of day (local)'), y:axis('turns')},
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmt(c.parsed.y)+' turns'}}} } });
+  const turnBuckets=new Array(24).fill(0), outBuckets=new Array(24).fill(0);
+  const days=new Set();
+  filteredHourly().forEach(h=>{ const lh=((h.hour+off)%24+24)%24; turnBuckets[lh]+=h.turns; outBuckets[lh]+=h.output; days.add(h.day); });
+  const dayCount=days.size||1;
+  const avgTurns=turnBuckets.map(v=>v/dayCount);
+  const avgOut=outBuckets.map(v=>v/dayCount);
+  mkChart('chart-hourly',{
+    data:{ labels:[...Array(24).keys()].map(h=>String(h).padStart(2,'0')+':00'),
+      datasets:[
+        {type:'bar', label:'Avg turns/hour', data:avgTurns, backgroundColor:'#10a37fcc', yAxisID:'y'},
+        {type:'line', label:'Avg output tokens/hour', data:avgOut, borderColor:'#d97757', backgroundColor:'#d97757', yAxisID:'y1', tension:.25, pointRadius:2, borderWidth:2},
+      ]},
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      scales:{ x:axis('hour of day (local)'), y:axis('avg turns',{fmt:tokFmt}), y1:axis('avg output tokens',{position:'right', noGrid:true, fmt:tokFmt}) },
+      plugins:{legend:{labels:{color:'#c7ccd6'}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.y)}}} } });
+  const cap=document.getElementById('hourly-caption');
+  if(cap) cap.textContent=dayCount+' day'+(dayCount===1?'':'s')+' averaged (local time).';
 }
 
 function renderProjects(){
-  const by={};
-  filteredSessions().forEach(s=>{ const p=by[s.project]||(by[s.project]={project:s.project, sessions:0, turns:0, input:0, cached:0, output:0, cost:0}); p.sessions++; p.turns+=s.turns; p.input+=s.input; p.cached+=s.cached; p.output+=s.output; p.cost+=calcCost(s.model,s.input,s.cached,s.output); });
-  let rows=Object.values(by);
+  let rows=groupByProject(filteredSessions());
   rows.sort((a,b)=> projSort==='project' ? a.project.localeCompare(b.project) : b[projSort]-a[projSort]);
   document.getElementById('projects-body').innerHTML=rows.map(p=>`<tr><td>${esc(p.project)}</td><td class="num">${p.sessions}</td><td class="num">${fmt(p.turns)}</td><td class="num">${fmt(p.input)}</td><td class="num">${fmt(p.output)}</td><td class="${p.cost?'cost':'cost-na'}">${p.cost?fmtMoney(p.cost):'n/a'}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No data in range.</td></tr>';
 }
+
+function groupByModel(sessions){
+  const by={};
+  sessions.forEach(s=>{ const m=by[s.model]||(by[s.model]={model:s.model, sessions:0, turns:0, input:0, cached:0, output:0, cost:0}); m.sessions++; m.turns+=s.turns; m.input+=s.input; m.cached+=s.cached; m.output+=s.output; m.cost+=calcCost(s.model,s.input,s.cached,s.output); });
+  return Object.values(by);
+}
+function groupByProject(sessions){
+  const by={};
+  sessions.forEach(s=>{ const p=by[s.project]||(by[s.project]={project:s.project, sessions:0, turns:0, input:0, cached:0, output:0, cost:0}); p.sessions++; p.turns+=s.turns; p.input+=s.input; p.cached+=s.cached; p.output+=s.output; p.cost+=calcCost(s.model,s.input,s.cached,s.output); });
+  return Object.values(by);
+}
+
+function renderModelTable(){
+  let rows=groupByModel(filteredSessions());
+  rows.sort((a,b)=> modelSort==='model' ? a.model.localeCompare(b.model) : b[modelSort]-a[modelSort]);
+  document.getElementById('model-body').innerHTML=rows.map(m=>`<tr>
+    <td><span class="tag model${isEst(m.model)?' est':''}"${isEst(m.model)?` title="${esc(EST_NOTE)}"`:''}>${esc(m.model)}${estStar(m.model)}</span></td>
+    <td class="num">${m.sessions}</td><td class="num">${fmt(m.turns)}</td><td class="num">${fmt(m.input)}</td>
+    <td class="num">${fmt(m.cached)}</td><td class="num">${fmt(m.output)}</td>
+    <td class="${m.cost?'cost':'cost-na'}">${priced(m.model)?fmtMoney(m.cost)+estStar(m.model):'n/a'}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No data in range.</td></tr>';
+}
+function sortModel(c){ modelSort=c; renderModelTable(); }
 
 function sortProjects(c){ projSort=c; renderProjects(); }
 function sortSessions(c){ sessSort=c; renderSessions(); }
@@ -471,6 +567,29 @@ function renderSessions(){
     <td class="num">${fmt(s.output)}</td>
     <td class="${s._cost?'cost':'cost-na'}"${isEst(s.model)?` title="${esc(EST_NOTE)}"`:''}>${priced(s.model)?fmtMoney(s._cost)+estStar(s.model):'n/a'}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No sessions in range.</td></tr>';
   document.getElementById('sessions-more').style.display = rows.length>sessLimit ? 'inline-block' : 'none';
+}
+
+// ── CSV export (client-side, no server round-trip) ─────────────────────────
+function csvCell(v){ const s=String(v==null?'':v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+function downloadCSV(name, header, rows){
+  const lines=[header.map(csvCell).join(',')].concat(rows.map(r=>r.map(csvCell).join(',')));
+  const blob=new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='gptusage_'+name+'_'+todayISO()+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function exportCSV(kind){
+  const sessions=filteredSessions();
+  if(kind==='model'){
+    const rows=groupByModel(sessions).map(m=>[m.model, m.sessions, m.turns, m.input, m.cached, m.output, m.cost.toFixed(4)]);
+    downloadCSV('by_model', ['Model','Sessions','Turns','Input','Cached','Output','Est Cost USD'], rows);
+  } else if(kind==='projects'){
+    const rows=groupByProject(sessions).map(p=>[p.project, p.sessions, p.turns, p.input, p.cached, p.output, p.cost.toFixed(4)]);
+    downloadCSV('by_project', ['Project','Sessions','Turns','Input','Cached','Output','Est Cost USD'], rows);
+  } else if(kind==='sessions'){
+    const rows=sessions.map(s=>[s.session_id, s.topic, s.project, s.source, s.model, s.last, s.turns, s.input, s.cached, s.output, calcCost(s.model,s.input,s.cached,s.output).toFixed(4)]);
+    downloadCSV('sessions', ['Session ID','Title','Project','Source','Model','Last Active','Turns','Input','Cached','Output','Est Cost USD'], rows);
+  }
 }
 
 // ── Collapsible cards (localStorage) ────────────────────────────────────────

@@ -617,6 +617,80 @@ README + plan §5. **Met.** Tasks 1–5 shipped in commits `5025676`/`119f131` (
 PR #6); task 6 delivered as [docs/UNIFIED_DASHBOARD_SCOPING.md](UNIFIED_DASHBOARD_SCOPING.md);
 pricing decisions recorded above in §5 and in the README's Pricing section.
 
+### Phase 3.6 — Dashboard parity with claude-usage v1.5.5
+
+Scoped 2026-08-25 against `phuryn/claude-usage` v1.5.5 (confirmed current — `main` HEAD equals
+the `v1.5.5` tag; the local reference clone at `../claude-usage-1.5.5` matches it exactly, so no
+new upstream commits exist since gpt-usage's Phase 3 dashboard was built). All tasks below are
+**pure `dashboard.py` (HTML/JS) changes** — every field they need already exists in `/api/data`
+(`thread_source`, `topic`, `total_reasoning_tokens`, `total_cached_input`, `project_name`), so no
+`scanner.py` schema change is required. Goal: match claude-usage's headline-metrics depth and
+chart/table breadth using gpt-usage's own (OpenAI-shaped) data, not a literal port.
+
+1. **Range-aware headline stats row.** Today's stats row (`renderStats()`) is hardcoded to
+   *today only* and ignores the Range filter — selecting "Last 30 Days" doesn't change it, unlike
+   claude-usage where the row recomputes for the selected range/model (`renderStats(totals)`,
+   8 cards). Rebuild it to read from `filteredSessions()`/`filteredDaily()` (already
+   range/model-filtered) and show: **Sessions, Turns, Input Tokens, Cached Input, Output Tokens,
+   Reasoning Tokens, Subagent Tokens, Est. Cost** — plus keep the existing **Plan / rate-limit**
+   tile (Codex-exclusive, claude-usage has no equivalent; don't drop it). Card labels get a
+   `sub` line naming the active range, like claude-usage's `rangeLabel`.
+2. **"Top Projects by Tokens" chart.** claude-usage has both a Projects *table* and a horizontal
+   stacked-bar *chart* (top 10 projects, Input/Output series, `indexAxis:'y'`). gpt-usage only
+   has the table. Add the chart (same shape, computed client-side from `filteredSessions()`
+   grouped by project — no backend change) as a new chart-card above or beside the Projects
+   table.
+3. **"Tokens by Thread Source" chart.** claude-usage has a "Subagent Tokens by Type" horizontal
+   stacked bar (Input/Output/Cache Read/Cache Creation per `agent_type`). gpt-usage has no
+   per-agent-type table, but has the equivalent-purpose `thread_source` field (user / subagent /
+   automation) already surfaced as a table column and color-coded (`src-user`/`src-subagent`/
+   `src-automation`). Add a horizontal stacked bar chart — Fresh input / Cached input / Output
+   per thread source — as gpt-usage's analog (three bars, not one per subagent type, since Codex
+   doesn't sub-type its subagent threads the way Claude Code's `agent_type` does).
+4. **"By Model" breakdown table.** claude-usage has both the Model Mix doughnut *and* a sortable
+   `renderModelCostTable` (Model, Sessions, Turns, Input, Output, Cost). gpt-usage only has the
+   doughnut. Add the table (Model, Sessions, Turns, Input, Cached, Output, Est. Cost — cached
+   replaces claude-usage's cache-read/cache-write split, per gpt-usage's own cost model in §5),
+   sortable like the existing Projects/Sessions tables.
+5. **CSV export.** claude-usage exports every table (Sessions, Cost by Project, Cost by Model,
+   Subagent Dispatches) via a per-table "⤓ CSV" button (`downloadCSV`, client-side `Blob`, no
+   server round-trip). Add the same for gpt-usage's Sessions, Projects, and new By-Model tables
+   — reuse claude-usage's pattern (a shared `downloadCSV(reportType, header, rows)` helper), not
+   its exact column set (gpt-usage's rows differ per §5's cost model and lack of message ids).
+6. **Calendar-aligned range presets.** claude-usage's Range selector has `today / week / month /
+   prev-month / 7d / 30d / 90d / all`; gpt-usage only has `today / 7d / 30d / 90d / all` — no
+   **This Week**, **This Month**, or **Previous Month** (calendar-boundary, not rolling-N-day).
+   Add the three missing options to `rangeStart()`/`inRange()` and the `<select>`. Use local
+   calendar-component boundaries (not `toISOString()`/UTC) per claude-usage's v1.5.5 fix (#151)
+   for the exact bug it was patching — this is a chance to get it right the first time rather
+   than reproduce and later re-fix it.
+7. **Hourly chart: averaged, dual-metric.** claude-usage's hourly chart shows *average* turns/hour
+   and *average* output-tokens/hour (bar + line, dual axis) over the N days in range, with a
+   "N days averaged" caption and peak-hour bar highlighting — not a raw sum, which becomes
+   misleading as the range grows (30d "hourly" totals dwarf 7d ones for reasons having nothing to
+   do with usage pattern). gpt-usage's `renderHourly()` currently sums raw turns only. Switch to
+   day-count-averaged turns (bar) + averaged output tokens (line, own axis), add the day-count
+   caption, matching the clarity fix without needing claude-usage's TZ-toggle machinery (out of
+   scope — see below).
+
+**Explicitly out of scope (investigated, not carried over):**
+- **Cost by Project & Branch table.** Requires a `git_branch` field claude-usage gets from
+  Claude Code's transcripts. Codex rollout files carry no equivalent — the full verified field
+  list in §2.2 (session_meta, turn_context) has no branch data, and the Phase-0 census (63 local
+  files, 9 `cli_version`s) never observed one. Not buildable without new data Codex doesn't log;
+  revisit only if a future Codex version starts emitting it.
+- **Hourly chart TZ toggle** (local vs. UTC display). claude-usage added this because Claude Code
+  users span many timezones with no single "right" default; gpt-usage's hourly chart already
+  uses the browser's local offset, which is the more useful default for a single-machine local
+  tool. Add only if a real user asks for UTC.
+- **VS Code extension parity.** claude-usage ships one; gpt-usage has no VS Code extension in
+  scope at all (not in §1 goals) — out of scope for a dashboard-parity pass.
+
+**Accept:** all 7 tasks implemented and eyeballed against real local data; existing test suite
+(`tests/test_dashboard.py`, pricing parity) stays green with no `scanner.py`/`/api/data` shape
+changes required; the two explicitly-out-of-scope items documented above rather than silently
+dropped.
+
 ### Phase 4 — Polish & release readiness
 
 1. README finalization (screenshots, pricing table with date, "what is/isn't tracked").
