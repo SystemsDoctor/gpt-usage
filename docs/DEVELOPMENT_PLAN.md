@@ -378,25 +378,54 @@ cost = (input_tokens - cached_input_tokens) * p["input"]  / 1e6 \
 # reasoning_output_tokens: already inside output_tokens — never priced separately
 ```
 
-Seed table — **⚠ [VERIFY] a Phase-2 task must confirm current prices at
-https://openai.com/api/pricing/ before release** (gpt-5.4/5.5/5.6 pricing is post-knowledge-
-cutoff; the gpt-5 row is the only one known-good as a historical anchor: $1.25 / $0.125 / $10):
+**Live table (verified 2026-07-15 against `developers.openai.com/api/docs/pricing`; every
+subvariant actually observed in local rollouts is covered — Phase 3.5 task 1):**
 
 ```python
 PRICING = {   # $ per MTok: input, cached (cache-read), output
-    "gpt-5.6":          {"input": ?, "cached": ?, "output": ?},   # verify
-    "gpt-5.5":          {"input": ?, "cached": ?, "output": ?},   # verify
-    "gpt-5.4":          {"input": ?, "cached": ?, "output": ?},   # verify
-    "gpt-5.3-codex":    {"input": ?, "cached": ?, "output": ?},   # verify
-    "gpt-5":            {"input": 1.25, "cached": 0.125, "output": 10.00},
-    "codex-auto-review": None,  # bundled review model — bill at $0, show n/a  [VERIFY]
+    "gpt-5.6-sol":       {"input": 5.00,  "cached": 0.50,  "output": 30.00},
+    "gpt-5.6-terra":     {"input": 2.50,  "cached": 0.25,  "output": 15.00},
+    "gpt-5.6-luna":      {"input": 1.00,  "cached": 0.10,  "output":  6.00},
+    "gpt-5.5-pro":       {"input": 30.00, "cached": 3.00,  "output": 180.00},
+    "gpt-5.5":           {"input": 5.00,  "cached": 0.50,  "output": 30.00},
+    "gpt-5.4-mini":      {"input": 0.75,  "cached": 0.075, "output":  4.50},
+    "gpt-5.4-nano":      {"input": 0.20,  "cached": 0.02,  "output":  1.25},
+    "gpt-5.4-pro":       {"input": 30.00, "cached": 3.00,  "output": 180.00},
+    "gpt-5.4":           {"input": 2.50,  "cached": 0.25,  "output": 15.00},
+    "gpt-5.3-codex":     {"input": 1.75,  "cached": 0.175, "output": 14.00},
+    "gpt-5":             {"input": 1.25,  "cached": 0.125, "output": 10.00},
+    "codex-auto-review": {"input": 2.50,  "cached": 0.25,  "output": 15.00},  # estimate, see below
 }
 ```
 
-Unknown models → `None` → $0 / `n/a` (claude-usage's deliberate rule; keep it). README carries
-the same caveat as claude-usage: these are API prices; Plus/Pro/Business subscription users have
-a different real cost structure — which is exactly why the rate-limit charts matter more than
-dollars for subscribers.
+Unknown models → `None` → $0 / `n/a` (claude-usage's deliberate rule; keep it).
+
+**Two pricing surfaces, reconciled (Phase 3.5 task 1 decision).** OpenAI publishes both **API
+US$ pricing** (the table above) and a separate **Codex/ChatGPT-plan credit rate card**
+(`learn.chatgpt.com/docs/pricing`) for Plus/Pro/Business subscribers. Scoping found the credit
+rate card is a flat **25× the API US$ rate for every model** (e.g. GPT-5.6 Sol: $5.00 input →
+125 credits; $0.50 cached → 12.5 credits; $30.00 output → 750 credits — matches the plan's
+published figures exactly). Rather than maintain a second pricing dict, `PRICING` stays the
+single source of truth in US$ and the dashboard multiplies by `CREDITS_PER_USD = 25` for
+display. A **US$ / Credits toggle** in the dashboard header (persisted to `localStorage`) lets
+subscription users see the unit that matches their plan; the CLI (`today`/`week`/`stats`)
+stays US$-only. Data is never stored or computed in credits — only the display label and
+multiplier change.
+
+**`codex-auto-review` (Phase 3.5 task 2 decision).** It is Codex's automatic code-review pass
+(GitHub-integration "auto reviews"); it appears as a first-class `model` on `turn_context`
+records (418 turns in local data) and OpenAI publishes **no separate SKU** — official docs say
+it "counts toward general Codex usage" under an underlying GPT model. Leaving it `None`
+materially undercounts real spend, so it is **priced as an estimate** at the gpt-5.4 /
+gpt-5.6-terra tier ($2.50 / $0.25 / $15 per MTok), which third-party Codex-usage trackers also
+assign it. It is the one entry in `ESTIMATED_PRICING` (Python) / `ESTIMATED` (JS); the dashboard
+marks every cost figure touching it with `*` and a footer note explaining the estimate, and the
+CLI does the same. Revisit if OpenAI ever names the underlying model explicitly.
+
+README carries the same caveat as claude-usage: these are API prices; Plus/Pro/Business
+subscription users have a different real cost structure (the credits toggle narrows but doesn't
+close that gap) — which is exactly why the rate-limit charts matter more than dollars for
+subscribers.
 
 ---
 
@@ -520,7 +549,7 @@ n/a and cost $0.
 **Accept:** tests pass; `python cli.py dashboard` opens a working dashboard on :8090 against
 real data; both this and claude-usage's dashboard can run simultaneously. **Met.**
 
-### Phase 3.5 — Accuracy & clarity fixes (from maintainer physical test)
+### Phase 3.5 — Accuracy & clarity fixes (from maintainer physical test) — ✅ DONE
 
 Raised after a hands-on test of the shipped dashboard. Do these before Phase 4 ship-prep. Some
 carry preliminary findings from a scoping pass (2026-07-15) — treat those as leads, verify before
@@ -584,7 +613,9 @@ implementing.
 
 **Accept:** tasks 1–5 implemented, tested (pricing parity stays green), and eyeballed on real
 data; task 6 delivered as a scoping doc under `docs/`. Model/pricing decisions recorded in
-README + plan §5.
+README + plan §5. **Met.** Tasks 1–5 shipped in commits `5025676`/`119f131` (merged to `main` as
+PR #6); task 6 delivered as [docs/UNIFIED_DASHBOARD_SCOPING.md](UNIFIED_DASHBOARD_SCOPING.md);
+pricing decisions recorded above in §5 and in the README's Pricing section.
 
 ### Phase 4 — Polish & release readiness
 
@@ -617,9 +648,9 @@ with no other steps, on Windows and POSIX.
 |---|---|
 | Codex rollout schema keeps drifting (9 cli_versions in 5 months locally) | Defensive `.get()` everywhere; unknown types skipped; fixture per known variant; Phase-0 census re-runnable anytime |
 | Resumed/forked sessions double-count if files are rewritten, not appended | Phase-0 verification; `lines`-shrank fallback (§4.3); reconciliation warning (§4.4) |
-| ~~gpt-5.4+ pricing unknown at planning time~~ **(Phase 2: verified in US$)** | Prices filled from live API pricing (2026-07-15). **Open (Phase 3.5 task 1):** a second surface — Codex/ChatGPT *credit* pricing — may model Codex-plan users better than API $; reconcile the two |
-| `codex-auto-review` billed as `n/a`/$0 undercounts cost | Phase 3.5 task 2: it's a real Codex usage pass (418 turns locally) with no separate SKU; decide terra/5.4-tier pricing vs footnoted n/a and document |
-| Output tokens invisible in daily chart (input ≫ output for Codex) | Phase 3.5 task 3: data is correct (output ≈0.3% of input); plot output on its own axis/series |
+| ~~gpt-5.4+ pricing unknown at planning time~~ **(Phase 2: verified in US$)** | Prices filled from live API pricing (2026-07-15). ~~Open: reconcile API $ vs Codex/ChatGPT credit pricing.~~ **(Phase 3.5 task 1: resolved — credit rate card is a flat 25× the US$ rate; dashboard offers a display toggle, see plan §5)** |
+| ~~`codex-auto-review` billed as `n/a`/$0 undercounts cost~~ | **(Phase 3.5 task 2: resolved — priced as an estimate at the gpt-5.4/terra tier, flagged `*` in CLI and dashboard, see plan §5)** |
+| ~~Output tokens invisible in daily chart (input ≫ output for Codex)~~ | **(Phase 3.5 task 3: resolved — output plotted as a line on its own right-hand axis in the daily tokens chart)** |
 | Rate-limit snapshot bloat | 15-min downsampling at insert (§4.1) |
 | `session_index.jsonl` may not exist on all installs | Titles are optional decoration; sessions fall back to project name |
 | ~~Compaction may reset `total_token_usage` mid-thread~~ **(Phase 0: not observed)** | Totals stayed monotonic in all 3 compaction files. We record `last_token_usage` per event regardless. Keep the diagnostic delta-clamp at ≥ 0 as cheap insurance against future drift |

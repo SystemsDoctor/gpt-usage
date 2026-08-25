@@ -52,11 +52,32 @@ Unique to the GPT version: Codex logs your **plan type and rolling rate-limit co
 with every response, so the dashboard can chart how close you are to your weekly limit over
 time — visibility the provider UI doesn't give you.
 
+## Pricing
+
+Costs shown in the CLI and dashboard are **estimates from OpenAI's published API pricing**
+(verified 2026-07-15 against `developers.openai.com/api/docs/pricing`; see
+[docs/DEVELOPMENT_PLAN.md §5](docs/DEVELOPMENT_PLAN.md#5-pricing) for the full table). Two
+caveats:
+
+- **Plus/Pro/Business plan users don't pay API rates.** Codex/ChatGPT plans meter usage in
+  **credits**, at a flat 25× the API US$ rate for every model. The dashboard's header has a
+  **US$ / Credits toggle** so subscribers can see the unit that matches their plan — the
+  underlying data is always stored and computed in US$; the toggle only relabels the display.
+  Either way, the rate-limit charts (your actual plan allowance) are the more reliable signal
+  for subscribers than any dollar figure.
+- **`codex-auto-review`** (Codex's automatic GitHub code-review pass) has no published SKU —
+  OpenAI's docs say it counts toward general Codex usage under an unnamed underlying model. It's
+  priced here as an **estimate** at the gpt-5.4/gpt-5.6-terra tier and marked with `*` wherever
+  it appears, rather than silently billed at $0.
+
+Unknown/future models price at $0 / `n/a` until added to the pricing table.
+
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
 | `docs/DEVELOPMENT_PLAN.md` | Architecture + phased build plan (the source of truth while building) |
+| `docs/UNIFIED_DASHBOARD_SCOPING.md` | Scoping doc for a future combined Claude + Codex dashboard (not implemented) |
 | `AGENTS.md` | Conventions for AI coding agents working on this repo |
 | `CLAUDE.md` | Claude Code entry point (imports AGENTS.md) |
 | `scanner.py` / `cli.py` / `dashboard.py` | The tool itself (built in Phases 1–3) |
