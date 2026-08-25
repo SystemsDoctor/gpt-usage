@@ -26,7 +26,9 @@ DB_PATH = Path(os.environ.get("GPT_USAGE_DB", Path.home() / ".codex" / "gpt-usag
 # of output and are never priced separately. input_tokens from the log INCLUDES cached, so
 # calc_cost prices (input - cached) at the fresh rate and cached at the cached rate (§5).
 #
-# Prices verified against https://developers.openai.com/api/docs/pricing on 2026-07-15.
+# Prices verified against https://developers.openai.com/api/docs/pricing on 2026-08-25
+# (re-checked after the 2026-08 GPT-5.6 price cut; gpt-5.6-sol/terra/luna dropped, everything
+# gpt-5.4-and-earlier is unchanged since the 2026-07-15 check).
 # This covers the full current GPT-5.4/5.5/5.6 roster and all subvariants (Phase 3.5 task 1).
 # KEEP THIS PARITY with the PRICING const in dashboard.py — a test guards it.
 #
@@ -40,9 +42,9 @@ DB_PATH = Path(os.environ.get("GPT_USAGE_DB", Path.home() / ".codex" / "gpt-usag
 #
 # Unlisted models resolve to None -> billed $0, shown as n/a (deliberate: never fabricate).
 PRICING = {
-    "gpt-5.6-sol":       {"input": 5.00, "cached": 0.50,  "output": 30.00},
-    "gpt-5.6-terra":     {"input": 2.50, "cached": 0.25,  "output": 15.00},
-    "gpt-5.6-luna":      {"input": 1.00, "cached": 0.10,  "output":  6.00},
+    "gpt-5.6-sol":       {"input": 4.00, "cached": 0.40,  "output": 20.00},
+    "gpt-5.6-terra":     {"input": 2.00, "cached": 0.20,  "output": 12.00},
+    "gpt-5.6-luna":      {"input": 0.20, "cached": 0.02,  "output":  1.20},
     "gpt-5.5-pro":       {"input": 30.00, "cached": 3.00, "output": 180.00},
     "gpt-5.5":           {"input": 5.00, "cached": 0.50,  "output": 30.00},
     "gpt-5.4-mini":      {"input": 0.75, "cached": 0.075, "output":  4.50},
@@ -54,9 +56,10 @@ PRICING = {
     # codex-auto-review: Codex's automatic code-review pass (GitHub auto-reviews). OpenAI
     # publishes NO separate SKU — docs say it "counts toward general Codex usage" under an
     # underlying GPT model. Leaving it unpriced materially undercounts (418 turns locally), so
-    # we ESTIMATE it at the gpt-5.4 / gpt-5.6-terra tier that third-party trackers report
-    # ($2.50 / $0.25 / $15). Flagged as an estimate in the footer; revisit if OpenAI names the
-    # underlying model (Phase 3.5 task 2).
+    # we ESTIMATE it at the gpt-5.4 tier that third-party trackers report ($2.50 / $0.25 / $15;
+    # gpt-5.6-terra used to match this tier exactly but diverged after the 2026-08 price cut, so
+    # this now anchors to gpt-5.4 specifically). Flagged as an estimate in the footer; revisit
+    # if OpenAI names the underlying model (Phase 3.5 task 2).
     "codex-auto-review": {"input": 2.50, "cached": 0.25,  "output": 15.00},
 }
 # Models whose price is an estimate rather than a published SKU (for UI footnoting).
@@ -330,7 +333,10 @@ def cmd_stats():
     hr("=")
     print("  Codex / GPT Usage - All-Time Statistics")
     hr("=")
-    print(f"  Period:           {(info['first'] or '')[:10]} to {(info['last'] or '')[:10]}")
+    if info["first"]:
+        print(f"  Period:           {info['first'][:10]} to {(info['last'] or '')[:10]}")
+    else:
+        print("  Period:           no data yet")
     print(f"  Total sessions:   {info['sessions'] or 0:,}")
     print(f"  Total turns:      {fmt(tot['turns'])}")
     print()

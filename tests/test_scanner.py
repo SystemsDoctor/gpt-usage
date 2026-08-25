@@ -206,6 +206,50 @@ class TestEmptyAndMissing(unittest.TestCase):
                 os.unlink(db)
 
 
+class TestCorruptAndSparseFiles(unittest.TestCase):
+    """Edge-case sweep (Phase 4): zero-byte/whitespace/binary-garbage rollout files, and a
+    session_meta-only file (thread created, zero turns) must never crash a scan."""
+
+    def _scan_dir(self, files):
+        tmp = tempfile.mkdtemp()
+        d = Path(tmp) / "2026" / "01" / "01"
+        d.mkdir(parents=True)
+        for name, content in files.items():
+            (d / name).write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
+        db = fresh_db()
+        try:
+            return scanner.scan(sessions_dir=tmp, db_path=db, verbose=False), db
+        finally:
+            pass  # caller unlinks db
+
+    def test_zero_byte_whitespace_and_garbage_dont_crash(self):
+        r, db = self._scan_dir({
+            "rollout-empty.jsonl": "",
+            "rollout-whitespace.jsonl": "   \n\n  \n",
+            "rollout-garbage.jsonl": b"this is not json at all\n\x00\x01binary junk\xff\xfe\n",
+        })
+        try:
+            self.assertEqual(r["turns"], 0)
+            self.assertEqual(r["sessions"], 0)
+        finally:
+            if os.path.exists(db):
+                os.unlink(db)
+
+    def test_meta_only_session_still_creates_a_row(self):
+        line = ('{"timestamp":"2026-01-01T00:00:00.000Z","type":"session_meta",'
+                '"payload":{"id":"s-edge-1","cwd":"C:/Users/dev/proj/x","thread_source":"user"}}\n')
+        r, db = self._scan_dir({"rollout-metaonly.jsonl": line})
+        try:
+            self.assertEqual(r["sessions"], 1)
+            row = query(db, "SELECT project_name, thread_source FROM sessions "
+                            "WHERE session_id='s-edge-1'")[0]
+            self.assertEqual(row["project_name"], "proj/x")
+            self.assertEqual(row["thread_source"], "user")
+        finally:
+            if os.path.exists(db):
+                os.unlink(db)
+
+
 class TestSessionTitles(unittest.TestCase):
     def test_titles_loaded_and_missing_ok(self):
         self.assertEqual(scanner.load_session_titles("C:/no/such/index.jsonl"), {})

@@ -248,9 +248,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <footer><div class="footer-content">
-  <p>Cost basis: OpenAI pricing as of 2026-07-15. Use the <b>Cost in</b> toggle to switch between <b>US$</b> (API rates) and <b>Credits</b> (Codex/ChatGPT-plan metering; 1 credit = $0.04, i.e. API US$ &times; 25). Unlisted models show <em>n/a</em>.</p>
+  <p>Cost basis: OpenAI pricing as of 2026-08-25. Use the <b>Cost in</b> toggle to switch between <b>US$</b> (API rates) and <b>Credits</b> (Codex/ChatGPT-plan metering; 1 credit = $0.04, i.e. API US$ &times; 25). Unlisted models show <em>n/a</em>.</p>
   <p><b>*</b> <em>Estimated pricing.</em> <em>codex-auto-review</em> is Codex&rsquo;s automatic code-review pass and has <b>no published SKU</b> (OpenAI counts it toward general Codex usage); it is billed here at the gpt-5.4 / gpt-5.6-terra tier as an estimate. Subscription (Plus/Pro/Business) real costs differ from API pricing &mdash; the rate-limit chart is the better signal for subscribers.</p>
-  <p>Reads local Codex rollout logs only &mdash; token counts and metadata, never conversation content. Modeled on <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a>. <span id="footer-meta"></span></p>
+  <p>Reads local Codex rollout logs only &mdash; token counts and metadata, never conversation content. Inspired by <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a> &mdash; an independent project, not affiliated with or endorsed by it. <span id="footer-meta"></span></p>
 </div></footer>
 
 <script>
@@ -258,7 +258,7 @@ const CFG = window.APP_CONFIG || {version:'?'};
 function esc(s){ const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; }
 
 // PRICING — keep in sync with cli.py PRICING (parity-tested). $ per MTok.
-const PRICING = {"gpt-5.6-sol":{"input":5.0,"cached":0.5,"output":30.0},"gpt-5.6-terra":{"input":2.5,"cached":0.25,"output":15.0},"gpt-5.6-luna":{"input":1.0,"cached":0.1,"output":6.0},"gpt-5.5-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.5":{"input":5.0,"cached":0.5,"output":30.0},"gpt-5.4-mini":{"input":0.75,"cached":0.075,"output":4.5},"gpt-5.4-nano":{"input":0.2,"cached":0.02,"output":1.25},"gpt-5.4-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.4":{"input":2.5,"cached":0.25,"output":15.0},"gpt-5.3-codex":{"input":1.75,"cached":0.175,"output":14.0},"gpt-5":{"input":1.25,"cached":0.125,"output":10.0},"codex-auto-review":{"input":2.5,"cached":0.25,"output":15.0}};
+const PRICING = {"gpt-5.6-sol":{"input":4.0,"cached":0.4,"output":20.0},"gpt-5.6-terra":{"input":2.0,"cached":0.2,"output":12.0},"gpt-5.6-luna":{"input":0.2,"cached":0.02,"output":1.2},"gpt-5.5-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.5":{"input":5.0,"cached":0.5,"output":30.0},"gpt-5.4-mini":{"input":0.75,"cached":0.075,"output":4.5},"gpt-5.4-nano":{"input":0.2,"cached":0.02,"output":1.25},"gpt-5.4-pro":{"input":30.0,"cached":3.0,"output":180.0},"gpt-5.4":{"input":2.5,"cached":0.25,"output":15.0},"gpt-5.3-codex":{"input":1.75,"cached":0.175,"output":14.0},"gpt-5":{"input":1.25,"cached":0.125,"output":10.0},"codex-auto-review":{"input":2.5,"cached":0.25,"output":15.0}};
 // codex-auto-review price is an ESTIMATE (terra/5.4 tier) — OpenAI publishes no SKU (§ Phase 3.5).
 const ESTIMATED = new Set(["codex-auto-review"]);
 const PRICING_KEYS = Object.keys(PRICING).sort((a,b)=>b.length-a.length);
