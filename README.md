@@ -55,7 +55,7 @@ time — visibility the provider UI doesn't give you.
 ## Pricing
 
 Costs shown in the CLI and dashboard are **estimates from OpenAI's published API pricing**
-(verified 2026-07-15 against `developers.openai.com/api/docs/pricing`; see
+(verified 2026-08-25 against `developers.openai.com/api/docs/pricing`; see
 [docs/DEVELOPMENT_PLAN.md §5](docs/DEVELOPMENT_PLAN.md#5-pricing) for the full table). Two
 caveats:
 

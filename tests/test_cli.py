@@ -46,8 +46,8 @@ def seed_db():
 
 class TestPricing(unittest.TestCase):
     def test_exact_and_longest_prefix(self):
-        self.assertEqual(cli.get_pricing("gpt-5.6-sol")["output"], 30.00)
-        self.assertEqual(cli.get_pricing("gpt-5.6-terra")["output"], 15.00)
+        self.assertEqual(cli.get_pricing("gpt-5.6-sol")["output"], 20.00)
+        self.assertEqual(cli.get_pricing("gpt-5.6-terra")["output"], 12.00)
         # longest-prefix: mini must not be swallowed by the gpt-5.4 base row
         self.assertEqual(cli.get_pricing("gpt-5.4-mini")["input"], 0.75)
         self.assertEqual(cli.get_pricing("gpt-5.4")["input"], 2.50)
