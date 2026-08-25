@@ -137,5 +137,43 @@ class TestCommands(unittest.TestCase):
             self._run(cli.cmd_today)
 
 
+class TestEmptyDatabase(unittest.TestCase):
+    """Edge-case sweep: a DB that exists (schema initialized) but has zero rows —
+    e.g. right after `scan` on a ~/.codex with no rollout files yet. Must not crash."""
+
+    def setUp(self):
+        fd, self.db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = sqlite3.connect(self.db)
+        scanner.init_db(conn)
+        conn.close()
+        self._orig = cli.DB_PATH
+        cli.DB_PATH = Path(self.db)
+
+    def tearDown(self):
+        cli.DB_PATH = self._orig
+        if os.path.exists(self.db):
+            os.unlink(self.db)
+
+    def _run(self, fn):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fn()
+        return buf.getvalue()
+
+    def test_today_on_empty_db(self):
+        out = self._run(cli.cmd_today)
+        self.assertIn("No usage recorded today", out)
+
+    def test_week_on_empty_db(self):
+        out = self._run(cli.cmd_week)
+        self.assertIn("No usage recorded", out)
+
+    def test_stats_on_empty_db_no_crash(self):
+        out = self._run(cli.cmd_stats)
+        self.assertIn("Total sessions:   0", out)
+        self.assertIn("no data yet", out)
+
+
 if __name__ == "__main__":
     unittest.main()

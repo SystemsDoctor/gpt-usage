@@ -333,7 +333,10 @@ def cmd_stats():
     hr("=")
     print("  Codex / GPT Usage - All-Time Statistics")
     hr("=")
-    print(f"  Period:           {(info['first'] or '')[:10]} to {(info['last'] or '')[:10]}")
+    if info["first"]:
+        print(f"  Period:           {info['first'][:10]} to {(info['last'] or '')[:10]}")
+    else:
+        print("  Period:           no data yet")
     print(f"  Total sessions:   {info['sessions'] or 0:,}")
     print(f"  Total turns:      {fmt(tot['turns'])}")
     print()
