@@ -250,7 +250,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <footer><div class="footer-content">
   <p>Cost basis: OpenAI pricing as of 2026-08-25. Use the <b>Cost in</b> toggle to switch between <b>US$</b> (API rates) and <b>Credits</b> (Codex/ChatGPT-plan metering; 1 credit = $0.04, i.e. API US$ &times; 25). Unlisted models show <em>n/a</em>.</p>
   <p><b>*</b> <em>Estimated pricing.</em> <em>codex-auto-review</em> is Codex&rsquo;s automatic code-review pass and has <b>no published SKU</b> (OpenAI counts it toward general Codex usage); it is billed here at the gpt-5.4 / gpt-5.6-terra tier as an estimate. Subscription (Plus/Pro/Business) real costs differ from API pricing &mdash; the rate-limit chart is the better signal for subscribers.</p>
-  <p>Reads local Codex rollout logs only &mdash; token counts and metadata, never conversation content. Modeled on <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a>. <span id="footer-meta"></span></p>
+  <p>Reads local Codex rollout logs only &mdash; token counts and metadata, never conversation content. Inspired by <a href="https://github.com/phuryn/claude-usage" target="_blank">phuryn/claude-usage</a> &mdash; an independent project, not affiliated with or endorsed by it. <span id="footer-meta"></span></p>
 </div></footer>
 
 <script>
