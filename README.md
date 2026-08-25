@@ -121,11 +121,10 @@ financial advice or a substitute for your actual OpenAI/Codex billing.
 ## Credits
 
 The architecture, philosophy, and much of the design of this tool are directly modeled on
-[claude-usage](https://github.com/phuryn/claude-usage) by **Pawel Huryn**
-([@phuryn](https://github.com/phuryn)) of [The Product Compass Newsletter](https://www.productcompass.pm)
+[claude-usage](https://github.com/phuryn/claude-usage) by ([@phuryn](https://github.com/phuryn)) of [The Product Compass Newsletter](https://www.productcompass.pm)
 — a stdlib-only usage dashboard for Claude Code. gpt-usage applies the same approach to Codex's
 local session logs; it is an independent project, not affiliated with or endorsed by
-claude-usage or Pawel. Thank you, Pawel, for the inspiration.
+claude-usage or similar projects.
 
 ## License
 
